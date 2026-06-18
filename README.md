@@ -4,6 +4,10 @@
 
 Built for the [Stellar Hacks: Real-World ZK](https://dorahacks.io/hackathon/stellar-hacks-zk) hackathon. The trust layer that [Open-Stellar](https://github.com/leocagli/Open-Stellar) (and any agent-commerce hub on Stellar) was missing.
 
+### ▶ Live demo: **https://leocagli.github.io/open-stellar-passport/**
+
+Generates a real Groth16 proof in your browser and verifies it on the deployed Stellar testnet contract — no wallet, no signup.
+
 ![Agent Passport — live demo: client-side ZK proof verified on-chain in Soroban](docs/hero.png)
 
 > Live demo: real in-browser Groth16 proving → real on-chain verification → x402 payment gate. Run it with `cd frontend && npm install && npm run dev`.
