@@ -22,10 +22,10 @@ export function Button({
     "relative inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed select-none";
   const variants: Record<Variant, string> = {
     primary:
-      "text-white bg-gradient-to-r from-violet to-cyan shadow-[0_8px_30px_-8px_rgba(124,92,255,0.6)] hover:brightness-110 hover:shadow-[0_10px_36px_-8px_rgba(124,92,255,0.8)] active:scale-[0.98]",
-    ghost: "text-fg/80 hover:text-fg hover:bg-white/5",
-    outline: "text-fg border border-white/12 hover:border-white/25 hover:bg-white/5",
-    danger: "text-denied border border-denied/30 hover:bg-denied/10",
+      "text-white bg-ink shadow-[0_8px_24px_-10px_rgba(10,10,10,0.5)] hover:-translate-y-px hover:shadow-[0_12px_28px_-10px_rgba(10,10,10,0.6)] active:translate-y-0",
+    ghost: "text-fg/70 hover:text-fg hover:bg-black/[0.04]",
+    outline: "text-fg border border-line hover:border-black/20 hover:bg-black/[0.03]",
+    danger: "text-denied border border-denied/30 hover:bg-denied/[0.06]",
   };
   return (
     <button className={cx(base, variants[variant], className)} disabled={loading || props.disabled} {...props}>
@@ -51,7 +51,7 @@ const toneCls: Record<Tone, string> = {
   verified: "text-verified bg-verified/10 ring-verified/25",
   denied: "text-denied bg-denied/10 ring-denied/25",
   amber: "text-amber bg-amber/10 ring-amber/25",
-  muted: "text-muted bg-white/5 ring-white/10",
+  muted: "text-muted bg-black/[0.04] ring-black/10",
 };
 export function Badge({ tone = "muted", children, className }: { tone?: Tone; children: ReactNode; className?: string }) {
   return (

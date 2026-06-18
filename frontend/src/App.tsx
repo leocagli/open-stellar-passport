@@ -173,12 +173,12 @@ export default function App() {
 
 function Header() {
   return (
-    <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-ink-950/80 backdrop-blur-xl">
+    <header className="sticky top-0 z-30 border-b border-black/[0.06] bg-ink-950/80 backdrop-blur-xl">
       <div className="mx-auto flex max-w-[1180px] items-center justify-between px-6 py-3.5">
         <div className="flex items-center gap-2.5">
           <Logo />
           <span className="text-[15px] font-semibold tracking-tight">Agent Passport</span>
-          <span className="ml-2 hidden items-center gap-1.5 rounded-full border border-white/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted sm:inline-flex">
+          <span className="ml-2 hidden items-center gap-1.5 rounded-full border border-black/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted sm:inline-flex">
             <span className="h-1 w-1 rounded-full bg-verified" /> testnet
           </span>
         </div>
@@ -188,7 +188,7 @@ function Header() {
               <a
                 href={EXPLORER(CONTRACTS.validator)}
                 target="_blank"
-                className="hidden items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-mono text-xs text-muted transition-colors hover:bg-white/5 hover:text-fg sm:inline-flex"
+                className="hidden items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-mono text-xs text-muted transition-colors hover:bg-black/5 hover:text-fg sm:inline-flex"
               >
                 {CONTRACTS.validator.slice(0, 4)}…{CONTRACTS.validator.slice(-4)}
                 <ExternalLink width={13} height={13} />
@@ -199,7 +199,7 @@ function Header() {
           <a
             href={REPO}
             target="_blank"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-fg/90 transition-colors hover:border-white/20 hover:bg-white/5"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-black/10 px-3 py-1.5 text-fg/90 transition-colors hover:border-black/20 hover:bg-black/5"
           >
             <Github width={15} height={15} /> GitHub
           </a>
@@ -211,8 +211,8 @@ function Header() {
 
 function Logo() {
   return (
-    <span className="grid h-7 w-7 place-items-center rounded-lg bg-gradient-to-br from-violet/30 to-cyan/20 ring-1 ring-white/10">
-      <ShieldCheck width={16} height={16} className="text-violet-soft" />
+    <span className="grid h-7 w-7 place-items-center rounded-lg bg-ink">
+      <ShieldCheck width={16} height={16} className="text-stellar" />
     </span>
   );
 }
@@ -220,7 +220,7 @@ function Logo() {
 function Hero() {
   return (
     <section>
-      <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.02] px-3 py-1 font-mono text-[11px] uppercase tracking-[0.15em] text-muted">
+      <div className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-black/[0.02] px-3 py-1 font-mono text-[11px] uppercase tracking-[0.15em] text-muted">
         <span className="h-1.5 w-1.5 rounded-full bg-cyan" /> Stellar Hacks · Real-World ZK
       </div>
       <h1 className="mt-5 text-[2.6rem] font-bold leading-[1.05] tracking-[-0.03em] text-fg sm:text-[3.1rem]">
@@ -234,7 +234,7 @@ function Hero() {
         is Sybil-resistant, and is solvent for its spend cap. Identity and balance stay hidden.
       </p>
 
-      <ul className="mt-7 grid max-w-xl gap-px overflow-hidden rounded-xl border border-white/[0.07] bg-white/[0.015] sm:grid-cols-1">
+      <ul className="mt-7 grid max-w-xl gap-px overflow-hidden rounded-xl border border-black/[0.07] bg-black/[0.015] sm:grid-cols-1">
         <Claim icon={<Fingerprint width={17} height={17} />} title="Personhood, not PII">
           Merkle membership in an attested registry — no identity database to breach.
         </Claim>
@@ -300,7 +300,7 @@ function StepShell({
               done
                 ? "bg-verified/15 text-verified ring-verified/40"
                 : muted
-                  ? "bg-white/5 text-faint ring-white/10"
+                  ? "bg-black/5 text-faint ring-black/10"
                   : "bg-violet/15 text-violet-soft ring-violet/40",
             )}
           >
@@ -347,7 +347,7 @@ function StepMint({
             step={5}
             value={cap}
             onChange={(e) => setCap(Number(e.target.value))}
-            className="w-full accent-[var(--color-violet)]"
+            className="w-full accent-[#0a0a0a]"
           />
         </label>
         <Button onClick={onMint} loading={proving}>
@@ -359,7 +359,7 @@ function StepMint({
       <AnimatePresence>
         {minted && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="mt-4 overflow-hidden">
-            <div className="rounded-xl border border-white/[0.07] bg-ink-950/50 p-3.5">
+            <div className="rounded-xl border border-black/[0.07] bg-ink-950/50 p-3.5">
               <div className="mb-2.5 flex items-center justify-between">
                 <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-cyan">
                   <Cpu width={13} height={13} /> Groth16 · {minted.provingMs} ms
@@ -374,7 +374,7 @@ function StepMint({
                 <Mono label="π.b" value={minted.proofHex.b} />
                 <Mono label="π.c" value={minted.proofHex.c} />
               </div>
-              <div className="mt-3 border-t border-white/[0.06] pt-3">
+              <div className="mt-3 border-t border-black/[0.06] pt-3">
                 <ProofDialog minted={minted} />
               </div>
             </div>
@@ -399,7 +399,7 @@ function ProofDialog({ minted }: { minted: MintedProof }) {
           <ScanLine width={13} height={13} /> view full proof &amp; public inputs
         </button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg border-white/10 bg-ink-900 text-fg">
+      <DialogContent className="max-w-lg border-black/10 bg-ink-900 text-fg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 tracking-tight">
             <Cpu width={16} height={16} className="text-violet-soft" /> Groth16 proof
@@ -431,7 +431,7 @@ function ProofDialog({ minted }: { minted: MintedProof }) {
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="rounded-xl border border-white/[0.07] bg-ink-950/50 p-3.5">
+    <div className="rounded-xl border border-black/[0.07] bg-ink-950/50 p-3.5">
       <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-faint">{title}</div>
       <div className="grid gap-1">{children}</div>
     </div>
@@ -593,8 +593,8 @@ function StepReplay({ replaying, replay, onReplay }: { replaying: boolean; repla
 
 function Console({ lines }: { lines: string[] }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-ink-950/60">
-      <div className="flex items-center gap-2 border-b border-white/[0.07] px-4 py-2.5">
+    <div className="overflow-hidden rounded-2xl border border-black/[0.07] bg-ink-950/60">
+      <div className="flex items-center gap-2 border-b border-black/[0.07] px-4 py-2.5">
         <Cpu width={13} height={13} className="text-faint" />
         <span className="font-mono text-[11px] tracking-wide text-faint">proof console</span>
         <span className="ml-auto font-mono text-[10px] text-faint">{lines.length} events</span>
@@ -630,12 +630,12 @@ function Threats() {
     <section className="mt-20">
       <div className="mb-6 flex items-center gap-3">
         <span className="font-mono text-[11px] uppercase tracking-[0.2em] text-faint">What it stops</span>
-        <span className="h-px flex-1 bg-white/[0.07]" />
+        <span className="h-px flex-1 bg-black/[0.07]" />
       </div>
-      <div className="grid gap-px overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.04] sm:grid-cols-3">
+      <div className="grid gap-px overflow-hidden rounded-2xl border border-black/[0.07] bg-black/[0.04] sm:grid-cols-3">
         {items.map((i) => (
           <div key={i.t} className="bg-ink-950/80 p-6">
-            <span className="grid h-9 w-9 place-items-center rounded-lg bg-white/5 text-muted ring-1 ring-white/10">
+            <span className="grid h-9 w-9 place-items-center rounded-lg bg-black/5 text-muted ring-1 ring-black/10">
               {i.icon}
             </span>
             <div className="mt-4 text-[15px] font-semibold tracking-tight">{i.t}</div>
@@ -649,7 +649,7 @@ function Threats() {
 
 function Footer() {
   return (
-    <footer className="border-t border-white/[0.06] py-8">
+    <footer className="border-t border-black/[0.06] py-8">
       <div className="mx-auto flex max-w-[1180px] flex-col items-center gap-2 px-6 text-center font-mono text-[11px] text-faint">
         <div>
           reuses{" "}

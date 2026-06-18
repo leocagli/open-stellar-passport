@@ -7,11 +7,11 @@ import {
 } from "lucide-react"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 
-// Vite app with a fixed dark theme — no next-themes provider needed.
+// Vite app with a fixed light theme — no next-themes provider needed.
 const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
-      theme="dark"
+      theme="light"
       className="toaster group"
       icons={{
         success: <CircleCheckIcon className="size-4" />,

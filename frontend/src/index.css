@@ -2,31 +2,29 @@
 @import "tw-animate-css";
 
 /* ------------------------------------------------------------------ *
- *  shadcn/ui tokens — mapped onto the Agent Passport palette so any
- *  shadcn component (dialog, tooltip, sonner…) inherits the credential
- *  look. Add components with: npx shadcn@latest add <name>
+ *  shadcn/ui tokens — light, Stellar-branded (black + white + yellow)
  * ------------------------------------------------------------------ */
 :root {
-  --radius: 0.75rem;
-  --background: #0a0a0f;
-  --foreground: #ececf3;
-  --card: #0f0f17;
-  --card-foreground: #ececf3;
-  --popover: #12121c;
-  --popover-foreground: #ececf3;
-  --primary: #7c5cff;
+  --radius: 0.7rem;
+  --background: #ffffff;
+  --foreground: #0a0a0a;
+  --card: #ffffff;
+  --card-foreground: #0a0a0a;
+  --popover: #ffffff;
+  --popover-foreground: #0a0a0a;
+  --primary: #0a0a0a;
   --primary-foreground: #ffffff;
-  --secondary: #1d1d2b;
-  --secondary-foreground: #ececf3;
-  --muted: #14141f;
-  --muted-foreground: #8b8ba3;
-  --accent: #1d1d2b;
-  --accent-foreground: #ececf3;
-  --destructive: #fb7185;
+  --secondary: #f4f4f1;
+  --secondary-foreground: #0a0a0a;
+  --muted: #f4f4f1;
+  --muted-foreground: #5a5a55;
+  --accent: #f6f6f3;
+  --accent-foreground: #0a0a0a;
+  --destructive: #dc2626;
   --destructive-foreground: #ffffff;
-  --border: #ffffff1a;
-  --input: #ffffff14;
-  --ring: #7c5cff;
+  --border: #0000000f;
+  --input: #00000014;
+  --ring: #fdda24;
 }
 
 @theme inline {
@@ -56,76 +54,74 @@
 }
 
 /* ------------------------------------------------------------------ *
- *  Agent Passport — design tokens (dark "verifiable credential" theme)
+ *  Agent Passport — Stellar-brand tokens (light)
+ *  Names are kept stable so existing utilities recolor in place.
  * ------------------------------------------------------------------ */
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
-  /* ink surfaces */
-  --color-ink-950: #08080c;
-  --color-ink-900: #0a0a0f;
-  --color-ink-850: #0f0f17;
-  --color-ink-800: #14141f;
-  --color-ink-700: #1d1d2b;
-  --color-ink-600: #2a2a3d;
+  /* surfaces (now light) */
+  --color-ink-950: #f5f5f2;
+  --color-ink-900: #ffffff;
+  --color-ink-850: #f5f5f2;
+  --color-ink-800: #eeeeea;
+  --color-ink-700: #e3e3dd;
+  --color-ink-600: #cfcfc8;
 
-  /* ZK accents */
-  --color-violet: #7c5cff;
-  --color-violet-soft: #9d86ff;
-  --color-cyan: #22d3ee;
-  --color-verified: #34d399;
-  --color-denied: #fb7185;
-  --color-amber: #fbbf24;
+  /* brand */
+  --color-ink: #0a0a0a; /* black — buttons, the credential card */
+  --color-stellar: #fdda24; /* Stellar yellow */
+  --color-stellar-deep: #8a6a00; /* readable gold for text on light */
+  --color-paper: #ffffff;
+  --color-line: #e7e7e2;
 
-  --color-fg: #ececf3;
-  --color-muted: #8b8ba3;
-  --color-faint: #5b5b73;
+  /* accent aliases (kept as violet/cyan names → now brand colours) */
+  --color-violet: #fdda24; /* fills / rings / active = yellow */
+  --color-violet-soft: #7a6000; /* accent text on light = deep gold */
+  --color-cyan: #8a6a00; /* data values = deep gold */
+  --color-verified: #16a34a;
+  --color-denied: #dc2626;
+  --color-amber: #d97706;
+
+  --color-fg: #0a0a0a;
+  --color-muted: #5a5a55;
+  --color-faint: #9a9a92;
 
   --radius-card: 1.25rem;
 }
 
 @layer base {
   html {
-    color-scheme: dark;
+    color-scheme: light;
   }
   body {
     margin: 0;
     background:
-      radial-gradient(800px 520px at 88% -12%, rgba(124, 92, 255, 0.1), transparent 62%),
-      radial-gradient(700px 440px at -6% 4%, rgba(34, 211, 238, 0.055), transparent 58%),
-      var(--color-ink-950);
+      radial-gradient(920px 560px at 90% -14%, rgba(253, 218, 36, 0.22), transparent 60%),
+      radial-gradient(680px 480px at -6% 112%, rgba(253, 218, 36, 0.08), transparent 55%),
+      var(--color-paper);
     color: var(--color-fg);
     font-family: var(--font-sans);
     font-feature-settings: "cv11", "ss01";
-    letter-spacing: -0.01em;
+    letter-spacing: -0.011em;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
     min-height: 100vh;
-  }
-  /* fine film grain — kills the flat "AI gradient" look */
-  body::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    z-index: 0;
-    pointer-events: none;
-    opacity: 0.035;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
   #root {
     position: relative;
     z-index: 1;
   }
   ::selection {
-    background: rgba(124, 92, 255, 0.35);
+    background: rgba(253, 218, 36, 0.4);
   }
   *::-webkit-scrollbar {
     width: 8px;
     height: 8px;
   }
   *::-webkit-scrollbar-thumb {
-    background: var(--color-ink-600);
+    background: var(--color-ink-700);
     border-radius: 99px;
   }
   *::-webkit-scrollbar-track {
@@ -134,29 +130,26 @@
 }
 
 @layer utilities {
+  /* light surface card */
   .glass {
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    backdrop-filter: blur(12px);
-  }
-  .text-gradient {
-    background: linear-gradient(100deg, var(--color-violet-soft), var(--color-cyan));
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    background: var(--color-paper);
+    border: 1px solid var(--color-line);
+    box-shadow:
+      0 1px 2px rgba(10, 10, 10, 0.04),
+      0 12px 32px -22px rgba(10, 10, 10, 0.22);
   }
   .grid-bg {
     background-image:
-      linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+      linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
     background-size: 38px 38px;
   }
   .holo {
     background: linear-gradient(
       135deg,
-      rgba(124, 92, 255, 0.18),
-      rgba(34, 211, 238, 0.12) 45%,
-      rgba(124, 92, 255, 0.06)
+      rgba(253, 218, 36, 0.22),
+      rgba(253, 218, 36, 0.06) 45%,
+      rgba(255, 255, 255, 0.03)
     );
   }
   @keyframes sheen {
@@ -171,20 +164,20 @@
     content: "";
     position: absolute;
     inset: 0;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+    background: linear-gradient(90deg, transparent, rgba(253, 218, 36, 0.14), transparent);
     transform: translateX(-120%) skewX(-18deg);
     animation: sheen 4.5s ease-in-out infinite;
     pointer-events: none;
   }
   @keyframes pulse-ring {
     0% {
-      box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.5);
+      box-shadow: 0 0 0 0 rgba(253, 218, 36, 0.5);
     }
     70% {
-      box-shadow: 0 0 0 12px rgba(52, 211, 153, 0);
+      box-shadow: 0 0 0 12px rgba(253, 218, 36, 0);
     }
     100% {
-      box-shadow: 0 0 0 0 rgba(52, 211, 153, 0);
+      box-shadow: 0 0 0 0 rgba(253, 218, 36, 0);
     }
   }
   .animate-pulse-ring {
