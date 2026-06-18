@@ -1,11 +1,14 @@
 # Demo video — script & shot list (~2:10)
 
-Two ways to use this:
+Two renders exist:
 
-- **Voiceover**: read the narration while the recorded screencast (`docs/demo.webm`)
-  plays. Generate the screencast with `node record-demo.mjs` in `frontend/`.
-- **Captioned only**: the screencast already burns in on-screen captions, so it
-  stands alone if you don't want to narrate.
+- **`docs/demo-narrated.mp4`** — captioned screencast **with voiceover**, composed
+  and rendered in Remotion (see [`../video/`](../video/)). The narration is
+  Windows SAPI TTS (no API key, robotic) — swap `video/public/vo/*.wav` for your
+  own voice or a premium TTS and re-render.
+- **`docs/demo.mp4`** — the same screencast, **silent** (captions only).
+
+The table below is the narration script (also used to generate the TTS).
 
 Everything shown is **real**: the proof is generated in the browser and verified
 live against the deployed Soroban contract on testnet.

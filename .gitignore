@@ -37,3 +37,8 @@ Thumbs.db
 docs/*.webm
 frontend/video-tmp/
 _vf_*.png
+
+# Installed agent skills (not project code)
+.agents/
+_tts_test.wav
+skills-lock.json
