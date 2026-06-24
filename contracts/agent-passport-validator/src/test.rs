@@ -111,7 +111,10 @@ fn rejects_tampered_public_input() {
 
     // Tamper the spend cap; the proof no longer matches -> InvalidProof.
     let mut inputs = real_public_inputs(&env);
-    inputs.set(IDX_SPEND_CAP, u256(&env, PI_CAP).add(&U256::from_u32(&env, 1)));
+    inputs.set(
+        IDX_SPEND_CAP,
+        u256(&env, PI_CAP).add(&U256::from_u32(&env, 1)),
+    );
 
     let res = client.try_verify_and_register(&real_proof(&env), &inputs);
     assert_eq!(res, Err(Ok(Error::InvalidProof)));
@@ -127,6 +130,19 @@ fn rejects_wrong_input_count() {
     let short = Vec::from_array(&env, [u256(&env, PI_ROOT), u256(&env, PI_NULLIFIER)]);
     let res = client.try_verify_and_register(&real_proof(&env), &short);
     assert_eq!(res, Err(Ok(Error::BadPublicInputs)));
+}
+
+#[test]
+fn public_heartbeat_keeps_instance_storage_alive() {
+    let env = Env::default();
+    env.ledger().set_sequence_number(1000);
+    let client = setup(&env);
+    let verifier = client.verifier();
+
+    env.ledger().set_sequence_number(1000 + TTL_THRESHOLD + 1);
+    client.bump_ttl();
+
+    assert_eq!(client.verifier(), verifier);
 }
 
 #[test]

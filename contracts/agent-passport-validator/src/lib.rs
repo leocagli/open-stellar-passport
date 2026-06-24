@@ -18,7 +18,7 @@
 
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, Address,
-    BytesN, Env, U256, Vec,
+    BytesN, Env, Vec, U256,
 };
 
 /// Generates a typed client for the already-deployed verifier straight from its
@@ -98,6 +98,12 @@ impl AgentPassportValidator {
         }
         storage.set(&DataKey::Admin, &admin);
         storage.set(&DataKey::Verifier, &verifier);
+        extend_instance_ttl(&env);
+    }
+
+    /// Public heartbeat that keeps the contract instance storage live.
+    pub fn bump_ttl(env: Env) {
+        extend_instance_ttl(&env);
     }
 
     /// Verify a passport proof and, if sound and unspent, mint the attestation.
@@ -110,6 +116,8 @@ impl AgentPassportValidator {
         proof: Groth16Proof,
         public_inputs: Vec<U256>,
     ) -> Result<Attestation, Error> {
+        extend_instance_ttl(&env);
+
         if public_inputs.len() != N_PUBLIC_INPUTS {
             return Err(Error::BadPublicInputs);
         }
@@ -169,16 +177,12 @@ impl AgentPassportValidator {
 
     /// True iff `agent_id` holds a minted zk-passport.
     pub fn is_registered(env: Env, agent_id: U256) -> bool {
-        env.storage()
-            .persistent()
-            .has(&DataKey::Passport(agent_id))
+        env.storage().persistent().has(&DataKey::Passport(agent_id))
     }
 
     /// Fetch the stored attestation for an agent, if any.
     pub fn get_passport(env: Env, agent_id: U256) -> Option<Attestation> {
-        env.storage()
-            .persistent()
-            .get(&DataKey::Passport(agent_id))
+        env.storage().persistent().get(&DataKey::Passport(agent_id))
     }
 
     /// True iff this nullifier has already been spent.
@@ -205,8 +209,13 @@ impl AgentPassportValidator {
             .ok_or(Error::NotInitialized)?;
         admin.require_auth();
         env.storage().instance().set(&DataKey::Verifier, &verifier);
+        extend_instance_ttl(&env);
         Ok(())
     }
+}
+
+fn extend_instance_ttl(env: &Env) {
+    env.storage().instance().extend_ttl(TTL_THRESHOLD, TTL_BUMP);
 }
 
 #[cfg(test)]
