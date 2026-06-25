@@ -62,24 +62,20 @@ fn real_public_inputs(env: &Env) -> Vec<U256> {
 }
 
 /// Deploy the real verifier WASM + our validator, init the wiring, return both.
-fn setup(env: &Env) -> AgentPassportValidatorClient<'static> {
-    setup_with_id(env).0
-}
-
-fn setup_with_id(env: &Env) -> (AgentPassportValidatorClient<'static>, Address) {
+fn setup(env: &Env, initial_root: U256) -> AgentPassportValidatorClient<'static> {
     let verifier_addr = env.register(verifier::WASM, ());
     let validator_addr = env.register(AgentPassportValidator, ());
     let client = AgentPassportValidatorClient::new(env, &validator_addr);
     let admin = Address::generate(env);
-    client.init(&admin, &verifier_addr);
-    (client, validator_addr)
+    client.init(&admin, &verifier_addr, &initial_root);
+    client
 }
 
 #[test]
 fn registers_a_valid_passport() {
     let env = Env::default();
     env.ledger().set_sequence_number(1000);
-    let client = setup(&env);
+    let client = setup(&env, u256(&env, PI_ROOT));
 
     let agent_id = u256(&env, PI_AGENT);
     assert!(!client.is_registered(&agent_id));
@@ -128,7 +124,7 @@ fn typed_passport_registered_event_keeps_legacy_shape() {
 #[test]
 fn rejects_nullifier_replay() {
     let env = Env::default();
-    let client = setup(&env);
+    let client = setup(&env, u256(&env, PI_ROOT));
 
     // First spend succeeds.
     client.verify_and_register(&real_proof(&env), &real_public_inputs(&env));
@@ -141,7 +137,7 @@ fn rejects_nullifier_replay() {
 #[test]
 fn rejects_tampered_public_input() {
     let env = Env::default();
-    let client = setup(&env);
+    let client = setup(&env, u256(&env, PI_ROOT));
 
     // Tamper the spend cap; the proof no longer matches -> InvalidProof.
     let mut inputs = real_public_inputs(&env);
@@ -159,7 +155,7 @@ fn rejects_tampered_public_input() {
 #[test]
 fn rejects_wrong_input_count() {
     let env = Env::default();
-    let client = setup(&env);
+    let client = setup(&env, u256(&env, PI_ROOT));
 
     let short = Vec::from_array(&env, [u256(&env, PI_ROOT), u256(&env, PI_NULLIFIER)]);
     let res = client.try_verify_and_register(&real_proof(&env), &short);
@@ -183,9 +179,45 @@ fn public_heartbeat_keeps_instance_storage_alive() {
 #[should_panic]
 fn init_is_one_shot() {
     let env = Env::default();
-    let client = setup(&env);
+    let client = setup(&env, u256(&env, PI_ROOT));
     let admin = Address::generate(&env);
     let verifier_addr = Address::generate(&env);
+    let root = u256(&env, PI_ROOT);
     // Second init must panic with AlreadyInitialized.
-    client.init(&admin, &verifier_addr);
+    client.init(&admin, &verifier_addr, &root);
+}
+
+#[test]
+fn rejects_unknown_registry_root() {
+    let env = Env::default();
+    // Initialize with a different root than what's in the proof.
+    let other_root = u256(&env, PI_ROOT).add(&U256::from_u32(&env, 1));
+    let client = setup(&env, other_root);
+
+    let res = client.try_verify_and_register(&real_proof(&env), &real_public_inputs(&env));
+    assert_eq!(res, Err(Ok(Error::UnknownRegistryRoot)));
+}
+
+#[test]
+fn can_manage_registry_roots() {
+    let env = Env::default();
+    // Start with an unrelated root.
+    let other_root = u256(&env, PI_ROOT).add(&U256::from_u32(&env, 1));
+    let client = setup(&env, other_root.clone());
+    let real_root = u256(&env, PI_ROOT);
+
+    assert!(!client.is_registry_root_approved(&real_root));
+
+    // Admin adds the real root.
+    env.mock_all_auths();
+    client.add_registry_root(&real_root);
+    assert!(client.is_registry_root_approved(&real_root));
+
+    // Now registration succeeds.
+    client.verify_and_register(&real_proof(&env), &real_public_inputs(&env));
+    assert!(client.is_registered(&u256(&env, PI_AGENT)));
+
+    // Admin removes the root.
+    client.remove_registry_root(&real_root);
+    assert!(!client.is_registry_root_approved(&real_root));
 }

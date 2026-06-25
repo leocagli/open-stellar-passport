@@ -61,6 +61,8 @@ pub enum Error {
     NullifierUsed = 4,
     /// The Groth16 proof did not verify against the embedded key.
     InvalidProof = 5,
+    /// The registry root is not in the allow-list.
+    UnknownRegistryRoot = 6,
 }
 
 #[contracttype]
@@ -91,6 +93,8 @@ enum DataKey {
     Nullifier(U256),
     /// agentId -> latest attestation.
     Passport(U256),
+    /// Approved Merkle root of the identity registry.
+    RegistryRoot(U256),
 }
 
 #[contract]
@@ -100,19 +104,14 @@ pub struct AgentPassportValidator;
 impl AgentPassportValidator {
     /// One-time wiring: who can re-point the verifier, and the verifier's
     /// contract address. Panics on a second call.
-    pub fn init(env: Env, admin: Address, verifier: Address) {
+    pub fn init(env: Env, admin: Address, verifier: Address, initial_root: U256) {
         let storage = env.storage().instance();
         if storage.has(&DataKey::Admin) {
             panic_with_error!(&env, Error::AlreadyInitialized);
         }
         storage.set(&DataKey::Admin, &admin);
         storage.set(&DataKey::Verifier, &verifier);
-        extend_instance_ttl(&env);
-    }
-
-    /// Public heartbeat that keeps the contract instance storage live.
-    pub fn bump_ttl(env: Env) {
-        extend_instance_ttl(&env);
+        storage.set(&DataKey::RegistryRoot(initial_root), &true);
     }
 
     /// Verify a passport proof and, if sound and unspent, mint the attestation.
@@ -135,6 +134,15 @@ impl AgentPassportValidator {
         let agent_id = public_inputs.get_unchecked(IDX_AGENT_ID);
         let registry_root = public_inputs.get_unchecked(0);
         let spend_cap = public_inputs.get_unchecked(IDX_SPEND_CAP);
+
+        // (0) check registry root allow-list — personhood check.
+        if !env
+            .storage()
+            .instance()
+            .has(&DataKey::RegistryRoot(registry_root.clone()))
+        {
+            return Err(Error::UnknownRegistryRoot);
+        }
 
         // (1) anti-replay / anti-Sybil — reject a nullifier we've already seen.
         let persistent = env.storage().persistent();
@@ -222,6 +230,41 @@ impl AgentPassportValidator {
         env.storage().instance().set(&DataKey::Verifier, &verifier);
         extend_instance_ttl(&env);
         Ok(())
+    }
+
+    /// Admin-only: add a new trusted registry root to the allow-list.
+    pub fn add_registry_root(env: Env, root: U256) -> Result<(), Error> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+        env.storage()
+            .instance()
+            .set(&DataKey::RegistryRoot(root), &true);
+        Ok(())
+    }
+
+    /// Admin-only: remove a registry root from the allow-list.
+    pub fn remove_registry_root(env: Env, root: U256) -> Result<(), Error> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+        env.storage()
+            .instance()
+            .remove(&DataKey::RegistryRoot(root));
+        Ok(())
+    }
+
+    /// True iff `root` is in the approved allow-list.
+    pub fn is_registry_root_approved(env: Env, root: U256) -> bool {
+        env.storage()
+            .instance()
+            .has(&DataKey::RegistryRoot(root))
     }
 }
 
