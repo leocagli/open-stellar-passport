@@ -6,6 +6,15 @@
  * Stellar without revealing the operator's identity or balance.
  */
 export {
+  createDelegationToken,
+  verifyDelegationToken,
+  authorizeDelegatedPayment,
+  revokeDelegationToken,
+  revokeDelegatorTokens,
+  resetDelegationState,
+  type DelegationToken,
+} from "./delegation-token.js";
+export {
   AgentPassport,
   authorizePassportSpend,
   type AgentPassportConfig,
