@@ -107,7 +107,7 @@ function errName(code: number): string {
   );
 }
 
-function parseContractError(e: unknown): string {
+export function parseContractError(e: unknown): string {
   const s = String((e as Error)?.message ?? e);
   const m = s.match(/Error\(Contract,\s*#(\d+)\)/) ?? s.match(/#(\d+)/);
   if (m) return errName(Number(m[1]));
@@ -273,6 +273,22 @@ export async function getPassport(
   };
 }
 
+export function evaluatePaymentAuthorization(
+  passport:
+    | Pick<NonNullable<OnChainResult["attestation"]>, "spend_cap">
+    | undefined,
+  amount: string,
+): { authorized: boolean; reason: string; cap?: string } {
+  if (!passport)
+    return { authorized: false, reason: "No passport — agent not verified" };
+  const ok = BigInt(passport.spend_cap) >= BigInt(amount);
+  return {
+    authorized: ok,
+    cap: passport.spend_cap,
+    reason: ok ? "Within proven spend cap" : "Exceeds proven spend cap",
+  };
+}
+
 /**
  * The x402 settle gate: an agent may pay `amount` iff it holds a passport
  * whose proven (hidden) spend cap covers it. Pure on-chain reads.
@@ -282,14 +298,7 @@ export async function authorizePayment(
   amount: string,
 ): Promise<{ authorized: boolean; reason: string; cap?: string }> {
   const passport = await getPassport(agentId);
-  if (!passport)
-    return { authorized: false, reason: "No passport — agent not verified" };
-  const ok = BigInt(passport.spend_cap) >= BigInt(amount);
-  return {
-    authorized: ok,
-    cap: passport.spend_cap,
-    reason: ok ? "Within proven spend cap" : "Exceeds proven spend cap",
-  };
+  return evaluatePaymentAuthorization(passport, amount);
 }
 
 /**
