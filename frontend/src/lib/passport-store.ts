@@ -76,12 +76,12 @@ export class PassportStore {
 
       if (config.spendLimits.dailyMaxXlm != null && daySum + amount > config.spendLimits.dailyMaxXlm) {
         this.events.push({ agentId, amount, ok: false, timestamp: now });
-        return this.fail(cbState, config);
+        return this.fail(agentId, cbState, config);
       }
 
       if (config.spendLimits.weeklyMaxXlm != null && weekSum + amount > config.spendLimits.weeklyMaxXlm) {
         this.events.push({ agentId, amount, ok: false, timestamp: now });
-        return this.fail(cbState, config);
+        return this.fail(agentId, cbState, config);
       }
 
       this.events.push({ agentId, amount, ok: true, timestamp: now });
@@ -101,12 +101,14 @@ export class PassportStore {
   }
 
   private fail(
+    agentId: string,
     cbState: { failures: number; revoked: boolean } | undefined,
     config: PassportConfig,
   ): { ok: false; reason: string } {
     if (!cbState) return { ok: false, reason: "daily_limit_exceeded" };
     cbState.failures++;
     if (cbState.failures >= config.circuitBreaker!.maxConsecutiveFailures) {
+      this.revokePassport(agentId, "circuit_breaker_tripped");
       return { ok: false, reason: "circuit_breaker_tripped" };
     }
     return { ok: false, reason: "exceeds_spend_limit" };
