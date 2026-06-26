@@ -17,5 +17,8 @@
   "dependencies": {
     "circomlib": "^2.0.5",
     "snarkjs": "^0.7.6"
+  },
+  "overrides": {
+    "bfj": "9.1.3"
   }
 }
