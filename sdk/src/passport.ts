@@ -2,7 +2,7 @@
  * High-level Agent Passport SDK: prove client-side, then mint / read the
  * on-chain attestation through the typed AgentPassportValidator client.
  */
-import { Client, networks, type Attestation } from "../bindings/src/index.js";
+import { Client, networks, type Attestation, type AuditRecord } from "../bindings/src/index.js";
 import type { ClientOptions } from "@stellar/stellar-sdk/contract";
 import {
   generatePassportProof,
@@ -28,6 +28,33 @@ export interface AgentPassportConfig {
 export class AgentPassport {
   readonly client: Client;
   private readonly artifacts: PassportArtifacts;
+
+  readonly auditLog = {
+    count: async (): Promise<bigint> => {
+      const tx = await this.client.audit_count();
+      return tx.result;
+    },
+    get: async (seq: bigint): Promise<AuditRecord | null> => {
+      const tx = await this.client.get_audit_entry({ seq });
+      return tx.result ?? null;
+    },
+    range: async (from: bigint, to: bigint): Promise<AuditRecord[]> => {
+      if (from < 0n || to < from) {
+        return [];
+      }
+      const limit = 50n;
+      let actualTo = to;
+      if (actualTo - from >= limit) {
+        actualTo = from + limit - 1n;
+      }
+      const promises: Promise<AuditRecord | null>[] = [];
+      for (let seq = from; seq <= actualTo; seq++) {
+        promises.push(this.auditLog.get(seq));
+      }
+      const results = await Promise.all(promises);
+      return results.filter((r): r is AuditRecord => r !== null);
+    },
+  };
 
   constructor(cfg: AgentPassportConfig) {
     this.artifacts = cfg.artifacts;

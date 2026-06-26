@@ -18,7 +18,7 @@
 
 use soroban_sdk::{
     contract, contracterror, contractevent, contractimpl, contracttype, panic_with_error, Address,
-    BytesN, Env, Vec, U256,
+    BytesN, Env, Symbol, Vec, U256,
 };
 
 /// Generates a typed client for the already-deployed verifier straight from its
@@ -76,6 +76,16 @@ pub struct Attestation {
     pub ledger: u32,
 }
 
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuditRecord {
+    pub action: Symbol,
+    pub actor: Address,
+    pub root: BytesN<32>,
+    pub ledger: u32,
+    pub success: bool,
+}
+
 #[contractevent(topics = ["passport"], data_format = "vec")]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PassportRegistered {
@@ -124,6 +134,8 @@ enum DataKey {
     Passport(U256),
     /// Approved Merkle root of the identity registry.
     RegistryRoot(U256),
+    AuditEntry(u64),
+    AuditSequence,
 }
 
 #[contract]
@@ -376,6 +388,100 @@ impl AgentPassportValidator {
     /// Explicitly bump the TTL of the contract instance.
     pub fn bump_ttl(env: Env) {
         extend_instance_ttl(&env);
+    }
+
+    pub fn issue_credential(env: Env, actor: Address, root: BytesN<32>) -> Result<(), Error> {
+        actor.require_auth();
+
+        let instance = env.storage().instance();
+        let seq: u64 = instance.get(&DataKey::AuditSequence).unwrap_or(0);
+
+        let record = AuditRecord {
+            action: Symbol::new(&env, "issue"),
+            actor: actor.clone(),
+            root,
+            ledger: env.ledger().sequence(),
+            success: true,
+        };
+
+        let persistent = env.storage().persistent();
+        let key = DataKey::AuditEntry(seq);
+        persistent.set(&key, &record);
+        persistent.extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+
+        instance.set(&DataKey::AuditSequence, &(seq + 1));
+        extend_instance_ttl(&env);
+
+        Ok(())
+    }
+
+    pub fn verify_credential(
+        env: Env,
+        actor: Address,
+        root: BytesN<32>,
+        success: bool,
+    ) -> Result<bool, Error> {
+        actor.require_auth();
+
+        let instance = env.storage().instance();
+        let seq: u64 = instance.get(&DataKey::AuditSequence).unwrap_or(0);
+
+        let action = if success {
+            Symbol::new(&env, "verify_ok")
+        } else {
+            Symbol::new(&env, "verify_fail")
+        };
+
+        let record = AuditRecord {
+            action,
+            actor: actor.clone(),
+            root,
+            ledger: env.ledger().sequence(),
+            success,
+        };
+
+        let persistent = env.storage().persistent();
+        let key = DataKey::AuditEntry(seq);
+        persistent.set(&key, &record);
+        persistent.extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+
+        instance.set(&DataKey::AuditSequence, &(seq + 1));
+        extend_instance_ttl(&env);
+
+        Ok(success)
+    }
+
+    pub fn revoke_credential(env: Env, actor: Address, root: BytesN<32>) -> Result<(), Error> {
+        actor.require_auth();
+
+        let instance = env.storage().instance();
+        let seq: u64 = instance.get(&DataKey::AuditSequence).unwrap_or(0);
+
+        let record = AuditRecord {
+            action: Symbol::new(&env, "revoke"),
+            actor: actor.clone(),
+            root,
+            ledger: env.ledger().sequence(),
+            success: true,
+        };
+
+        let persistent = env.storage().persistent();
+        let key = DataKey::AuditEntry(seq);
+        persistent.set(&key, &record);
+        persistent.extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+
+        instance.set(&DataKey::AuditSequence, &(seq + 1));
+        extend_instance_ttl(&env);
+
+        Ok(())
+    }
+
+    pub fn get_audit_entry(env: Env, seq: u64) -> Option<AuditRecord> {
+        env.storage().persistent().get(&DataKey::AuditEntry(seq))
+    }
+
+    pub fn audit_count(env: Env) -> u64 {
+        env.storage().instance().get(&DataKey::AuditSequence).unwrap_or(0)
     }
 }
 

@@ -272,3 +272,51 @@ fn renounce_admin() {
     let res = client.try_init(&Address::generate(&env), &Address::generate(&env), &U256::from_u32(&env, 123));
     assert!(res.is_err());
 }
+
+#[test]
+fn test_audit_logging() {
+    let env = Env::default();
+    let client = setup(&env, u256(&env, PI_ROOT));
+
+    let actor = Address::generate(&env);
+    let root = BytesN::from_array(&env, &[0u8; 32]);
+
+    env.mock_all_auths();
+    client.issue_credential(&actor, &root);
+    assert_eq!(client.audit_count(), 1);
+
+    let res_verify_ok = client.verify_credential(&actor, &root, &true);
+    assert_eq!(res_verify_ok, true);
+    assert_eq!(client.audit_count(), 2);
+
+    let res_verify_fail = client.verify_credential(&actor, &root, &false);
+    assert_eq!(res_verify_fail, false);
+    assert_eq!(client.audit_count(), 3);
+
+    client.revoke_credential(&actor, &root);
+    assert_eq!(client.audit_count(), 4);
+
+    let entry0 = client.get_audit_entry(&0).unwrap();
+    assert_eq!(entry0.action, Symbol::new(&env, "issue"));
+    assert_eq!(entry0.actor, actor);
+    assert_eq!(entry0.root, root);
+    assert_eq!(entry0.success, true);
+
+    let entry1 = client.get_audit_entry(&1).unwrap();
+    assert_eq!(entry1.action, Symbol::new(&env, "verify_ok"));
+    assert_eq!(entry1.actor, actor);
+    assert_eq!(entry1.root, root);
+    assert_eq!(entry1.success, true);
+
+    let entry2 = client.get_audit_entry(&2).unwrap();
+    assert_eq!(entry2.action, Symbol::new(&env, "verify_fail"));
+    assert_eq!(entry2.actor, actor);
+    assert_eq!(entry2.root, root);
+    assert_eq!(entry2.success, false);
+
+    let entry3 = client.get_audit_entry(&3).unwrap();
+    assert_eq!(entry3.action, Symbol::new(&env, "revoke"));
+    assert_eq!(entry3.actor, actor);
+    assert_eq!(entry3.root, root);
+    assert_eq!(entry3.success, true);
+}

@@ -67,6 +67,14 @@ ledger: u32;
   spend_cap: u256;
 }
 
+export interface AuditRecord {
+  action: string;
+  actor: string;
+  ledger: u32;
+  root: Buffer;
+  success: boolean;
+}
+
 
 /**
  * Groth16 proof over BN254, re-declared in *this* contract's spec (the
@@ -126,7 +134,11 @@ export interface Client {
    * registers the agent. Returns the freshly stored [`Attestation`].
    */
   verify_and_register: ({proof, public_inputs}: {proof: Groth16Proof, public_inputs: Array<u256>}, options?: MethodOptions) => Promise<AssembledTransaction<Result<Attestation>>>
-
+  issue_credential: ({actor, root}: {actor: string, root: Buffer}, options?: MethodOptions) => Promise<AssembledTransaction<Result<void>>>
+  verify_credential: ({actor, root, success}: {actor: string, root: Buffer, success: boolean}, options?: MethodOptions) => Promise<AssembledTransaction<Result<boolean>>>
+  revoke_credential: ({actor, root}: {actor: string, root: Buffer}, options?: MethodOptions) => Promise<AssembledTransaction<Result<void>>>
+  get_audit_entry: ({seq}: {seq: u64}, options?: MethodOptions) => Promise<AssembledTransaction<Option<AuditRecord>>>
+  audit_count: (options?: MethodOptions) => Promise<AssembledTransaction<u64>>
 }
 export class Client extends ContractClient {
   static async deploy<T = Client>(
@@ -165,6 +177,11 @@ export class Client extends ContractClient {
         set_verifier: this.txFromJSON<Result<void>>,
         is_registered: this.txFromJSON<boolean>,
         is_nullifier_used: this.txFromJSON<boolean>,
-        verify_and_register: this.txFromJSON<Result<Attestation>>
+        verify_and_register: this.txFromJSON<Result<Attestation>>,
+        issue_credential: this.txFromJSON<Result<void>>,
+        verify_credential: this.txFromJSON<Result<boolean>>,
+        revoke_credential: this.txFromJSON<Result<void>>,
+        get_audit_entry: this.txFromJSON<Option<AuditRecord>>,
+        audit_count: this.txFromJSON<u64>
   }
 }
