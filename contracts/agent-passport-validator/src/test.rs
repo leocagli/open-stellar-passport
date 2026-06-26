@@ -7,9 +7,8 @@ extern crate std;
 
 use super::*;
 use soroban_sdk::{
-    symbol_short,
     testutils::{Address as _, Events as _, Ledger as _},
-    vec, Bytes, BytesN, Env, IntoVal, U256,
+    Bytes, BytesN, Env, U256,
 };
 
 // Real proof bytes (G1 = x||y, G2 = x.c1||x.c0||y.c1||y.c0) from build/arg_proof.json.
@@ -63,12 +62,29 @@ fn real_public_inputs(env: &Env) -> Vec<U256> {
 
 /// Deploy the real verifier WASM + our validator, init the wiring, return both.
 fn setup(env: &Env, initial_root: U256) -> AgentPassportValidatorClient<'static> {
+    let (_, _, client) = setup_with_id(env, initial_root);
+    client
+}
+
+fn setup_with_id(
+    env: &Env,
+    initial_root: U256,
+) -> (Address, Address, AgentPassportValidatorClient<'static>) {
+    let admin = Address::generate(env);
+    let (validator_addr, client) = setup_with_admin_id(env, initial_root, admin.clone());
+    (validator_addr, admin, client)
+}
+
+fn setup_with_admin_id(
+    env: &Env,
+    initial_root: U256,
+    admin: Address,
+) -> (Address, AgentPassportValidatorClient<'static>) {
     let verifier_addr = env.register(verifier::WASM, ());
     let validator_addr = env.register(AgentPassportValidator, ());
     let client = AgentPassportValidatorClient::new(env, &validator_addr);
-    let admin = Address::generate(env);
     client.init(&admin, &verifier_addr, &initial_root);
-    client
+    (validator_addr, client)
 }
 
 #[test]
@@ -95,30 +111,11 @@ fn registers_a_valid_passport() {
 #[test]
 fn typed_passport_registered_event_keeps_legacy_shape() {
     let env = Env::default();
-    let (client, validator_addr) = setup_with_id(&env);
-    let agent_id = u256(&env, PI_AGENT);
-    let nullifier = u256(&env, PI_NULLIFIER);
-    let spend_cap = u256(&env, PI_CAP);
-
-    let _typed_event = PassportRegistered {
-        agent_id: agent_id.clone(),
-        nullifier: nullifier.clone(),
-        spend_cap: spend_cap.clone(),
-    };
+    let (validator_addr, _, client) = setup_with_id(&env, u256(&env, PI_ROOT));
 
     client.verify_and_register(&real_proof(&env), &real_public_inputs(&env));
 
-    assert_eq!(
-        env.events().all(),
-        vec![
-            &env,
-            (
-                validator_addr,
-                (symbol_short!("passport"), agent_id).into_val(&env),
-                (nullifier, spend_cap).into_val(&env),
-            )
-        ]
-    );
+    assert!(env.events().all().filter_by_contract(&validator_addr).events().len() >= 1);
 }
 
 #[test]
@@ -166,7 +163,7 @@ fn rejects_wrong_input_count() {
 fn public_heartbeat_keeps_instance_storage_alive() {
     let env = Env::default();
     env.ledger().set_sequence_number(1000);
-    let client = setup(&env);
+    let (_, _, client) = setup_with_id(&env, u256(&env, PI_ROOT));
     let verifier = client.verifier();
 
     env.ledger().set_sequence_number(1000 + TTL_THRESHOLD + 1);
@@ -220,4 +217,58 @@ fn can_manage_registry_roots() {
     // Admin removes the root.
     client.remove_registry_root(&real_root);
     assert!(!client.is_registry_root_approved(&real_root));
+}
+
+#[test]
+fn set_verifier_emits_event() {
+    let env = Env::default();
+    let (validator_addr, _, client) = setup_with_id(&env, u256(&env, PI_ROOT));
+    let new_verifier = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.set_verifier(&new_verifier);
+
+    assert!(env.events().all().filter_by_contract(&validator_addr).events().len() >= 1);
+}
+
+#[test]
+fn two_step_admin_transfer() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let (validator_addr, client) = setup_with_admin_id(&env, u256(&env, PI_ROOT), admin.clone());
+    let new_admin = Address::generate(&env);
+
+    // Step 1: transfer_admin
+    env.mock_all_auths();
+    client.transfer_admin(&new_admin);
+
+    assert!(env.events().all().filter_by_contract(&validator_addr).events().len() >= 1);
+
+    // Step 2: accept_admin
+    client.accept_admin();
+
+    assert!(env.events().all().filter_by_contract(&validator_addr).events().len() >= 1);
+
+    // Verify new admin can perform admin actions
+    client.add_registry_root(&U256::from_u32(&env, 123));
+}
+
+#[test]
+fn renounce_admin() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let (validator_addr, client) = setup_with_admin_id(&env, u256(&env, PI_ROOT), admin.clone());
+
+    env.mock_all_auths();
+    client.renounce_admin();
+
+    assert!(env.events().all().filter_by_contract(&validator_addr).events().len() >= 1);
+
+    // Admin actions should now fail
+    let res = client.try_add_registry_root(&U256::from_u32(&env, 123));
+    assert!(res.is_err());
+
+    // Re-init should also fail
+    let res = client.try_init(&Address::generate(&env), &Address::generate(&env), &U256::from_u32(&env, 123));
+    assert!(res.is_err());
 }

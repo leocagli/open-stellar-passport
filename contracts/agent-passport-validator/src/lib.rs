@@ -17,8 +17,8 @@
 //!   [0] registryRoot   [1] nullifierHash   [2] agentId   [3] spendCap
 
 use soroban_sdk::{
-    contract, contracterror, contractevent, contractimpl, contracttype, panic_with_error,
-    symbol_short, Address, BytesN, Env, Vec, U256,
+    contract, contracterror, contractevent, contractimpl, contracttype, panic_with_error, Address,
+    BytesN, Env, Vec, U256,
 };
 
 /// Generates a typed client for the already-deployed verifier straight from its
@@ -85,9 +85,38 @@ pub struct PassportRegistered {
     pub spend_cap: U256,
 }
 
+#[contractevent(topics = ["verifier"], data_format = "vec")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifierChanged {
+    pub old: Address,
+    pub new: Address,
+}
+
+#[contractevent(topics = ["admin_tr"], data_format = "vec")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminTransferStarted {
+    pub old: Address,
+    pub new: Address,
+}
+
+#[contractevent(topics = ["admin_ch"], data_format = "vec")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminChanged {
+    pub old: Option<Address>,
+    pub new: Address,
+}
+
+#[contractevent(topics = ["admin_re"], data_format = "vec")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminRenounced {
+    pub old: Address,
+}
+
 #[contracttype]
 enum DataKey {
     Admin,
+    PendingAdmin,
+    Initialized,
     Verifier,
     /// nullifierHash -> spent (presence == spent).
     Nullifier(U256),
@@ -106,12 +135,19 @@ impl AgentPassportValidator {
     /// contract address. Panics on a second call.
     pub fn init(env: Env, admin: Address, verifier: Address, initial_root: U256) {
         let storage = env.storage().instance();
-        if storage.has(&DataKey::Admin) {
+        if storage.has(&DataKey::Initialized) {
             panic_with_error!(&env, Error::AlreadyInitialized);
         }
+        storage.set(&DataKey::Initialized, &true);
         storage.set(&DataKey::Admin, &admin);
         storage.set(&DataKey::Verifier, &verifier);
         storage.set(&DataKey::RegistryRoot(initial_root), &true);
+
+        AdminChanged {
+            old: None,
+            new: admin,
+        }
+        .publish(&env);
     }
 
     /// Verify a passport proof and, if sound and unspent, mint the attestation.
@@ -227,7 +263,17 @@ impl AgentPassportValidator {
             .get(&DataKey::Admin)
             .ok_or(Error::NotInitialized)?;
         admin.require_auth();
+
+        let old: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Verifier)
+            .ok_or(Error::NotInitialized)?;
+
         env.storage().instance().set(&DataKey::Verifier, &verifier);
+
+        VerifierChanged { old, new: verifier }.publish(&env);
+
         extend_instance_ttl(&env);
         Ok(())
     }
@@ -260,11 +306,76 @@ impl AgentPassportValidator {
         Ok(())
     }
 
+    /// Admin-only: Propose a new admin.
+    pub fn transfer_admin(env: Env, new_admin: Address) -> Result<(), Error> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+
+        env.storage().instance().set(&DataKey::PendingAdmin, &new_admin);
+
+        AdminTransferStarted {
+            old: admin,
+            new: new_admin,
+        }
+        .publish(&env);
+
+        Ok(())
+    }
+
+    /// The proposed admin accepts the role.
+    pub fn accept_admin(env: Env) -> Result<(), Error> {
+        let pending_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingAdmin)
+            .ok_or(Error::NotInitialized)?;
+        pending_admin.require_auth();
+
+        let old_admin: Option<Address> = env.storage().instance().get(&DataKey::Admin);
+
+        env.storage().instance().set(&DataKey::Admin, &pending_admin);
+        env.storage().instance().remove(&DataKey::PendingAdmin);
+
+        AdminChanged {
+            old: old_admin,
+            new: pending_admin,
+        }
+        .publish(&env);
+
+        Ok(())
+    }
+
+    /// Admin-only: Renounce the admin role.
+    pub fn renounce_admin(env: Env) -> Result<(), Error> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+
+        env.storage().instance().remove(&DataKey::Admin);
+        env.storage().instance().remove(&DataKey::PendingAdmin);
+
+        AdminRenounced { old: admin }.publish(&env);
+
+        Ok(())
+    }
+
     /// True iff `root` is in the approved allow-list.
     pub fn is_registry_root_approved(env: Env, root: U256) -> bool {
         env.storage()
             .instance()
             .has(&DataKey::RegistryRoot(root))
+    }
+
+    /// Explicitly bump the TTL of the contract instance.
+    pub fn bump_ttl(env: Env) {
+        extend_instance_ttl(&env);
     }
 }
 
