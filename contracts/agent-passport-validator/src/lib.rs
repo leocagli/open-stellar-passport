@@ -94,11 +94,17 @@ pub struct VerifyResult {
 #[contracttype]
 enum DataKey {
     Admin,
+    PendingAdmin,
+    Initialized,
     Verifier,
     /// nullifierHash -> spent (presence == spent).
     Nullifier(U256),
     /// agentId -> latest attestation.
     Passport(U256),
+    /// Approved Merkle root of the identity registry.
+    RegistryRoot(U256),
+    AuditEntry(u64),
+    AuditSequence,
 }
 
 #[contract]
@@ -108,13 +114,21 @@ pub struct AgentPassportValidator;
 impl AgentPassportValidator {
     /// One-time wiring: who can re-point the verifier, and the verifier's
     /// contract address. Panics on a second call.
-    pub fn init(env: Env, admin: Address, verifier: Address) {
+    pub fn init(env: Env, admin: Address, verifier: Address, initial_root: U256) {
         let storage = env.storage().instance();
-        if storage.has(&DataKey::Admin) {
+        if storage.has(&DataKey::Initialized) {
             panic_with_error!(&env, Error::AlreadyInitialized);
         }
+        storage.set(&DataKey::Initialized, &true);
         storage.set(&DataKey::Admin, &admin);
         storage.set(&DataKey::Verifier, &verifier);
+        storage.set(&DataKey::RegistryRoot(initial_root), &true);
+
+        AdminChanged {
+            old: None,
+            new: admin,
+        }
+        .publish(&env);
     }
 
     /// Internal logic for verifying a single passport proof.
@@ -123,6 +137,8 @@ impl AgentPassportValidator {
         proof: &Groth16Proof,
         public_inputs: &Vec<U256>,
     ) -> Result<Attestation, Error> {
+        extend_instance_ttl(&env);
+
         if public_inputs.len() != N_PUBLIC_INPUTS {
             return Err(Error::BadPublicInputs);
         }
@@ -131,6 +147,15 @@ impl AgentPassportValidator {
         let agent_id = public_inputs.get_unchecked(IDX_AGENT_ID);
         let registry_root = public_inputs.get_unchecked(0);
         let spend_cap = public_inputs.get_unchecked(IDX_SPEND_CAP);
+
+        // (0) check registry root allow-list — personhood check.
+        if !env
+            .storage()
+            .instance()
+            .has(&DataKey::RegistryRoot(registry_root.clone()))
+        {
+            return Err(Error::UnknownRegistryRoot);
+        }
 
         // (1) anti-replay / anti-Sybil — reject a nullifier we've already seen.
         let persistent = env.storage().persistent();
@@ -172,10 +197,12 @@ impl AgentPassportValidator {
         persistent.set(&pass_key, &attestation);
         persistent.extend_ttl(&pass_key, TTL_THRESHOLD, TTL_BUMP);
 
-        env.events().publish(
-            (symbol_short!("passport"), agent_id),
-            (nullifier, spend_cap),
-        );
+        PassportRegistered {
+            agent_id,
+            nullifier,
+            spend_cap,
+        }
+        .publish(&env);
 
         Ok(attestation)
     }
@@ -234,16 +261,12 @@ impl AgentPassportValidator {
 
     /// True iff `agent_id` holds a minted zk-passport.
     pub fn is_registered(env: Env, agent_id: U256) -> bool {
-        env.storage()
-            .persistent()
-            .has(&DataKey::Passport(agent_id))
+        env.storage().persistent().has(&DataKey::Passport(agent_id))
     }
 
     /// Fetch the stored attestation for an agent, if any.
     pub fn get_passport(env: Env, agent_id: U256) -> Option<Attestation> {
-        env.storage()
-            .persistent()
-            .get(&DataKey::Passport(agent_id))
+        env.storage().persistent().get(&DataKey::Passport(agent_id))
     }
 
     /// True iff this nullifier has already been spent.
@@ -269,9 +292,220 @@ impl AgentPassportValidator {
             .get(&DataKey::Admin)
             .ok_or(Error::NotInitialized)?;
         admin.require_auth();
+
+        let old: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Verifier)
+            .ok_or(Error::NotInitialized)?;
+
         env.storage().instance().set(&DataKey::Verifier, &verifier);
+
+        VerifierChanged { old, new: verifier }.publish(&env);
+
+        extend_instance_ttl(&env);
         Ok(())
     }
+
+    /// Admin-only: add a new trusted registry root to the allow-list.
+    pub fn add_registry_root(env: Env, root: U256) -> Result<(), Error> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+        env.storage()
+            .instance()
+            .set(&DataKey::RegistryRoot(root), &true);
+        Ok(())
+    }
+
+    /// Admin-only: remove a registry root from the allow-list.
+    pub fn remove_registry_root(env: Env, root: U256) -> Result<(), Error> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+        env.storage()
+            .instance()
+            .remove(&DataKey::RegistryRoot(root));
+        Ok(())
+    }
+
+    /// Admin-only: Propose a new admin.
+    pub fn transfer_admin(env: Env, new_admin: Address) -> Result<(), Error> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+
+        env.storage()
+            .instance()
+            .set(&DataKey::PendingAdmin, &new_admin);
+
+        AdminTransferStarted {
+            old: admin,
+            new: new_admin,
+        }
+        .publish(&env);
+
+        Ok(())
+    }
+
+    /// The proposed admin accepts the role.
+    pub fn accept_admin(env: Env) -> Result<(), Error> {
+        let pending_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingAdmin)
+            .ok_or(Error::NotInitialized)?;
+        pending_admin.require_auth();
+
+        let old_admin: Option<Address> = env.storage().instance().get(&DataKey::Admin);
+
+        env.storage()
+            .instance()
+            .set(&DataKey::Admin, &pending_admin);
+        env.storage().instance().remove(&DataKey::PendingAdmin);
+
+        AdminChanged {
+            old: old_admin,
+            new: pending_admin,
+        }
+        .publish(&env);
+
+        Ok(())
+    }
+
+    /// Admin-only: Renounce the admin role.
+    pub fn renounce_admin(env: Env) -> Result<(), Error> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+
+        env.storage().instance().remove(&DataKey::Admin);
+        env.storage().instance().remove(&DataKey::PendingAdmin);
+
+        AdminRenounced { old: admin }.publish(&env);
+
+        Ok(())
+    }
+
+    /// True iff `root` is in the approved allow-list.
+    pub fn is_registry_root_approved(env: Env, root: U256) -> bool {
+        env.storage().instance().has(&DataKey::RegistryRoot(root))
+    }
+
+    /// Explicitly bump the TTL of the contract instance.
+    pub fn bump_ttl(env: Env) {
+        extend_instance_ttl(&env);
+    }
+
+    pub fn issue_credential(env: Env, actor: Address, root: BytesN<32>) -> Result<(), Error> {
+        actor.require_auth();
+
+        let instance = env.storage().instance();
+        let seq: u64 = instance.get(&DataKey::AuditSequence).unwrap_or(0);
+
+        let record = AuditRecord {
+            action: Symbol::new(&env, "issue"),
+            actor: actor.clone(),
+            root,
+            ledger: env.ledger().sequence(),
+            success: true,
+        };
+
+        let persistent = env.storage().persistent();
+        let key = DataKey::AuditEntry(seq);
+        persistent.set(&key, &record);
+        persistent.extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+
+        instance.set(&DataKey::AuditSequence, &(seq + 1));
+        extend_instance_ttl(&env);
+
+        Ok(())
+    }
+
+    pub fn verify_credential(
+        env: Env,
+        actor: Address,
+        root: BytesN<32>,
+        success: bool,
+    ) -> Result<bool, Error> {
+        actor.require_auth();
+
+        let instance = env.storage().instance();
+        let seq: u64 = instance.get(&DataKey::AuditSequence).unwrap_or(0);
+
+        let action = if success {
+            Symbol::new(&env, "verify_ok")
+        } else {
+            Symbol::new(&env, "verify_fail")
+        };
+
+        let record = AuditRecord {
+            action,
+            actor: actor.clone(),
+            root,
+            ledger: env.ledger().sequence(),
+            success,
+        };
+
+        let persistent = env.storage().persistent();
+        let key = DataKey::AuditEntry(seq);
+        persistent.set(&key, &record);
+        persistent.extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+
+        instance.set(&DataKey::AuditSequence, &(seq + 1));
+        extend_instance_ttl(&env);
+
+        Ok(success)
+    }
+
+    pub fn revoke_credential(env: Env, actor: Address, root: BytesN<32>) -> Result<(), Error> {
+        actor.require_auth();
+
+        let instance = env.storage().instance();
+        let seq: u64 = instance.get(&DataKey::AuditSequence).unwrap_or(0);
+
+        let record = AuditRecord {
+            action: Symbol::new(&env, "revoke"),
+            actor: actor.clone(),
+            root,
+            ledger: env.ledger().sequence(),
+            success: true,
+        };
+
+        let persistent = env.storage().persistent();
+        let key = DataKey::AuditEntry(seq);
+        persistent.set(&key, &record);
+        persistent.extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+
+        instance.set(&DataKey::AuditSequence, &(seq + 1));
+        extend_instance_ttl(&env);
+
+        Ok(())
+    }
+
+    pub fn get_audit_entry(env: Env, seq: u64) -> Option<AuditRecord> {
+        env.storage().persistent().get(&DataKey::AuditEntry(seq))
+    }
+
+    pub fn audit_count(env: Env) -> u64 {
+        env.storage().instance().get(&DataKey::AuditSequence).unwrap_or(0)
+    }
+}
+
+fn extend_instance_ttl(env: &Env) {
+    env.storage().instance().extend_ttl(TTL_THRESHOLD, TTL_BUMP);
 }
 
 #[cfg(test)]

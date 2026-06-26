@@ -7,7 +7,7 @@ extern crate std;
 
 use super::*;
 use soroban_sdk::{
-    testutils::{Address as _, Ledger as _},
+    testutils::{Address as _, Events as _, Ledger as _},
     Bytes, BytesN, Env, U256,
 };
 
@@ -61,20 +61,37 @@ fn real_public_inputs(env: &Env) -> Vec<U256> {
 }
 
 /// Deploy the real verifier WASM + our validator, init the wiring, return both.
-fn setup(env: &Env) -> AgentPassportValidatorClient<'static> {
+fn setup(env: &Env, initial_root: U256) -> AgentPassportValidatorClient<'static> {
+    let (_, _, client) = setup_with_id(env, initial_root);
+    client
+}
+
+fn setup_with_id(
+    env: &Env,
+    initial_root: U256,
+) -> (Address, Address, AgentPassportValidatorClient<'static>) {
+    let admin = Address::generate(env);
+    let (validator_addr, client) = setup_with_admin_id(env, initial_root, admin.clone());
+    (validator_addr, admin, client)
+}
+
+fn setup_with_admin_id(
+    env: &Env,
+    initial_root: U256,
+    admin: Address,
+) -> (Address, AgentPassportValidatorClient<'static>) {
     let verifier_addr = env.register(verifier::WASM, ());
     let validator_addr = env.register(AgentPassportValidator, ());
     let client = AgentPassportValidatorClient::new(env, &validator_addr);
-    let admin = Address::generate(env);
-    client.init(&admin, &verifier_addr);
-    client
+    client.init(&admin, &verifier_addr, &initial_root);
+    (validator_addr, client)
 }
 
 #[test]
 fn registers_a_valid_passport() {
     let env = Env::default();
     env.ledger().set_sequence_number(1000);
-    let client = setup(&env);
+    let client = setup(&env, u256(&env, PI_ROOT));
 
     let agent_id = u256(&env, PI_AGENT);
     assert!(!client.is_registered(&agent_id));
@@ -192,7 +209,7 @@ fn rejects_batch_too_large() {
 #[test]
 fn rejects_nullifier_replay() {
     let env = Env::default();
-    let client = setup(&env);
+    let client = setup(&env, u256(&env, PI_ROOT));
 
     // First spend succeeds.
     client.verify_and_register(&real_proof(&env), &real_public_inputs(&env));
@@ -205,11 +222,14 @@ fn rejects_nullifier_replay() {
 #[test]
 fn rejects_tampered_public_input() {
     let env = Env::default();
-    let client = setup(&env);
+    let client = setup(&env, u256(&env, PI_ROOT));
 
     // Tamper the spend cap; the proof no longer matches -> InvalidProof.
     let mut inputs = real_public_inputs(&env);
-    inputs.set(IDX_SPEND_CAP, u256(&env, PI_CAP).add(&U256::from_u32(&env, 1)));
+    inputs.set(
+        IDX_SPEND_CAP,
+        u256(&env, PI_CAP).add(&U256::from_u32(&env, 1)),
+    );
 
     let res = client.try_verify_and_register(&real_proof(&env), &inputs);
     assert_eq!(res, Err(Ok(Error::InvalidProof)));
@@ -220,7 +240,7 @@ fn rejects_tampered_public_input() {
 #[test]
 fn rejects_wrong_input_count() {
     let env = Env::default();
-    let client = setup(&env);
+    let client = setup(&env, u256(&env, PI_ROOT));
 
     let short = Vec::from_array(&env, [u256(&env, PI_ROOT), u256(&env, PI_NULLIFIER)]);
     let res = client.try_verify_and_register(&real_proof(&env), &short);
@@ -228,12 +248,195 @@ fn rejects_wrong_input_count() {
 }
 
 #[test]
+fn public_heartbeat_keeps_instance_storage_alive() {
+    let env = Env::default();
+    env.ledger().set_sequence_number(1000);
+    let (_, _, client) = setup_with_id(&env, u256(&env, PI_ROOT));
+    let verifier = client.verifier();
+
+    env.ledger().set_sequence_number(1000 + TTL_THRESHOLD + 1);
+    client.bump_ttl();
+
+    assert_eq!(client.verifier(), verifier);
+}
+
+#[test]
 #[should_panic]
 fn init_is_one_shot() {
     let env = Env::default();
-    let client = setup(&env);
+    let client = setup(&env, u256(&env, PI_ROOT));
     let admin = Address::generate(&env);
     let verifier_addr = Address::generate(&env);
+    let root = u256(&env, PI_ROOT);
     // Second init must panic with AlreadyInitialized.
-    client.init(&admin, &verifier_addr);
+    client.init(&admin, &verifier_addr, &root);
+}
+
+#[test]
+fn rejects_unknown_registry_root() {
+    let env = Env::default();
+    // Initialize with a different root than what's in the proof.
+    let other_root = u256(&env, PI_ROOT).add(&U256::from_u32(&env, 1));
+    let client = setup(&env, other_root);
+
+    let res = client.try_verify_and_register(&real_proof(&env), &real_public_inputs(&env));
+    assert_eq!(res, Err(Ok(Error::UnknownRegistryRoot)));
+}
+
+#[test]
+fn can_manage_registry_roots() {
+    let env = Env::default();
+    // Start with an unrelated root.
+    let other_root = u256(&env, PI_ROOT).add(&U256::from_u32(&env, 1));
+    let client = setup(&env, other_root.clone());
+    let real_root = u256(&env, PI_ROOT);
+
+    assert!(!client.is_registry_root_approved(&real_root));
+
+    // Admin adds the real root.
+    env.mock_all_auths();
+    client.add_registry_root(&real_root);
+    assert!(client.is_registry_root_approved(&real_root));
+
+    // Now registration succeeds.
+    client.verify_and_register(&real_proof(&env), &real_public_inputs(&env));
+    assert!(client.is_registered(&u256(&env, PI_AGENT)));
+
+    // Admin removes the root.
+    client.remove_registry_root(&real_root);
+    assert!(!client.is_registry_root_approved(&real_root));
+}
+
+#[test]
+fn set_verifier_emits_event() {
+    let env = Env::default();
+    let (validator_addr, _, client) = setup_with_id(&env, u256(&env, PI_ROOT));
+    let new_verifier = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.set_verifier(&new_verifier);
+
+    assert!(
+        env.events()
+            .all()
+            .filter_by_contract(&validator_addr)
+            .events()
+            .len()
+            >= 1
+    );
+}
+
+#[test]
+fn two_step_admin_transfer() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let (validator_addr, client) = setup_with_admin_id(&env, u256(&env, PI_ROOT), admin.clone());
+    let new_admin = Address::generate(&env);
+
+    // Step 1: transfer_admin
+    env.mock_all_auths();
+    client.transfer_admin(&new_admin);
+
+    assert!(
+        env.events()
+            .all()
+            .filter_by_contract(&validator_addr)
+            .events()
+            .len()
+            >= 1
+    );
+
+    // Step 2: accept_admin
+    client.accept_admin();
+
+    assert!(
+        env.events()
+            .all()
+            .filter_by_contract(&validator_addr)
+            .events()
+            .len()
+            >= 1
+    );
+
+    // Verify new admin can perform admin actions
+    client.add_registry_root(&U256::from_u32(&env, 123));
+}
+
+#[test]
+fn renounce_admin() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let (validator_addr, client) = setup_with_admin_id(&env, u256(&env, PI_ROOT), admin.clone());
+
+    env.mock_all_auths();
+    client.renounce_admin();
+
+    assert!(
+        env.events()
+            .all()
+            .filter_by_contract(&validator_addr)
+            .events()
+            .len()
+            >= 1
+    );
+
+    // Admin actions should now fail
+    let res = client.try_add_registry_root(&U256::from_u32(&env, 123));
+    assert!(res.is_err());
+
+    // Re-init should also fail
+    let res = client.try_init(
+        &Address::generate(&env),
+        &Address::generate(&env),
+        &U256::from_u32(&env, 123),
+    );
+    assert!(res.is_err());
+}
+
+#[test]
+fn test_audit_logging() {
+    let env = Env::default();
+    let client = setup(&env, u256(&env, PI_ROOT));
+
+    let actor = Address::generate(&env);
+    let root = BytesN::from_array(&env, &[0u8; 32]);
+
+    env.mock_all_auths();
+    client.issue_credential(&actor, &root);
+    assert_eq!(client.audit_count(), 1);
+
+    let res_verify_ok = client.verify_credential(&actor, &root, &true);
+    assert_eq!(res_verify_ok, true);
+    assert_eq!(client.audit_count(), 2);
+
+    let res_verify_fail = client.verify_credential(&actor, &root, &false);
+    assert_eq!(res_verify_fail, false);
+    assert_eq!(client.audit_count(), 3);
+
+    client.revoke_credential(&actor, &root);
+    assert_eq!(client.audit_count(), 4);
+
+    let entry0 = client.get_audit_entry(&0).unwrap();
+    assert_eq!(entry0.action, Symbol::new(&env, "issue"));
+    assert_eq!(entry0.actor, actor);
+    assert_eq!(entry0.root, root);
+    assert_eq!(entry0.success, true);
+
+    let entry1 = client.get_audit_entry(&1).unwrap();
+    assert_eq!(entry1.action, Symbol::new(&env, "verify_ok"));
+    assert_eq!(entry1.actor, actor);
+    assert_eq!(entry1.root, root);
+    assert_eq!(entry1.success, true);
+
+    let entry2 = client.get_audit_entry(&2).unwrap();
+    assert_eq!(entry2.action, Symbol::new(&env, "verify_fail"));
+    assert_eq!(entry2.actor, actor);
+    assert_eq!(entry2.root, root);
+    assert_eq!(entry2.success, false);
+
+    let entry3 = client.get_audit_entry(&3).unwrap();
+    assert_eq!(entry3.action, Symbol::new(&env, "revoke"));
+    assert_eq!(entry3.actor, actor);
+    assert_eq!(entry3.root, root);
+    assert_eq!(entry3.success, true);
 }

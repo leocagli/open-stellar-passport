@@ -68,6 +68,14 @@ ledger: u32;
   spend_cap: u256;
 }
 
+export interface AuditRecord {
+  action: string;
+  actor: string;
+  ledger: u32;
+  root: Buffer;
+  success: boolean;
+}
+
 
 /**
  * Groth16 proof over BN254, re-declared in *this* contract's spec (the
