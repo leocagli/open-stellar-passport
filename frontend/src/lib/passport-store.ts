@@ -1,3 +1,5 @@
+import { isRevoked } from "./passport/revocation-store";
+
 export const DEFAULT_PASSPORT_TTL_DAYS = Number(process.env.PASSPORT_TTL_DAYS ?? 30);
 
 export interface PassportRecord {
@@ -99,7 +101,8 @@ export class PassportStore {
     }
   }
 
-  revokePassport(agentId: string): void {
+  /** Internal helper: trips the circuit-breaker revoked flag for an agent. */
+  private _cbRevoke(agentId: string): void {
     const state = this.cbStates.get(agentId);
     if (!state) return;
     state.revoked = true;
@@ -112,7 +115,12 @@ export class PassportStore {
     amount: number,
     config?: PassportConfig,
   ): { ok: boolean; reason?: string; expiredAt?: string } {
-    // Expiry check — runs before all other checks
+    // Revocation check — must be the very first guard
+    if (isRevoked(agentId)) {
+      return { ok: false, reason: "PassportRevoked" };
+    }
+
+    // Expiry check
     const passport = this.passports.get(agentId);
     if (passport && new Date(passport.expiresAt) < new Date()) {
       return { ok: false, reason: "PassportExpired", expiredAt: passport.expiresAt };
@@ -160,7 +168,7 @@ export class PassportStore {
     if (cbState) {
       cbState.failures++;
       if (cbState.failures >= config!.circuitBreaker!.maxConsecutiveFailures) {
-        this.revokePassport(agentId);
+        this._cbRevoke(agentId);
         return { ok: false, reason: "circuit_breaker_tripped" };
       }
     }
@@ -175,7 +183,7 @@ export class PassportStore {
     if (!cbState) return { ok: false, reason: "daily_limit_exceeded" };
     cbState.failures++;
     if (cbState.failures >= config.circuitBreaker!.maxConsecutiveFailures) {
-      this.revokePassport(agentId);
+      this._cbRevoke(agentId);
       return { ok: false, reason: "circuit_breaker_tripped" };
     }
     return { ok: false, reason: "exceeds_spend_limit" };
