@@ -206,4 +206,16 @@ node scripts/smoke.mjs   # ==> PROOF VALID: true
 
 MIT. Vendored circuit building blocks under `circuits/lib/` are Apache-2.0 (© Nethermind), derived from tornadocash/tornado-nova.
 
+## Trust Assumptions
+
+The `AgentPassportValidator` contract has an `admin` role with significant power. Specifically, the admin can:
+- **Change the Verifier**: Update the address of the verifier contract used for proof validation. A malicious admin could point to a verifier that always returns `true`, bypassing all ZK security guarantees.
+- **Manage Registry Roots**: Add or remove approved identity registry roots.
+
+To mitigate these risks:
+- **Observable Actions**: All administrative actions (verifier changes, admin transfers) emit on-chain events for transparency.
+- **Two-Step Transfer**: Admin rights are transferred through a propose-and-accept flow to prevent accidental loss of control.
+- **Multisig Recommendation**: For production deployments, the admin should be a multisig account (e.g., Gnosis Safe on Stellar) or a DAO-controlled contract, rather than a single-signature key.
+- **Renouncement**: The admin role can be renounced if no further upgrades or management are intended.
+
 > ⚠️ Research prototype for a hackathon. Not audited. Do not use with real funds.
