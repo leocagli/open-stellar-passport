@@ -17,8 +17,8 @@
 //!   [0] registryRoot   [1] nullifierHash   [2] agentId   [3] spendCap
 
 use soroban_sdk::{
-    contract, contracterror, contractevent, contractimpl, contracttype, panic_with_error, Address,
-    BytesN, Env, Symbol, Vec, U256,
+    contract, contracterror, contractimpl, contracttype, panic_with_error, Address,
+    BytesN, Env, Symbol, U256, Vec,
 };
 
 /// Generates a typed client for the already-deployed verifier straight from its
@@ -32,7 +32,7 @@ mod verifier {
 /// imported one isn't exported) so SDKs/CLI can build the argument directly.
 /// Byte layout: G1 `a`/`c` = x||y (32B BE each); G2 `b` = x.c1||x.c0||y.c1||y.c0.
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Groth16Proof {
     pub a: BytesN<64>,
     pub b: BytesN<128>,
@@ -61,8 +61,55 @@ pub enum Error {
     NullifierUsed = 4,
     /// The Groth16 proof did not verify against the embedded key.
     InvalidProof = 5,
-    /// The registry root is not in the allow-list.
-    UnknownRegistryRoot = 6,
+    /// Batch size exceeds the limit of 8.
+    BatchTooLarge = 6,
+    /// The registry root is not in the approved allow-list.
+    UnknownRegistryRoot = 7,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct AdminChanged {
+    pub old: Option<Address>,
+    pub new: Address,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct VerifierChanged {
+    pub old: Address,
+    pub new: Address,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct AdminTransferStarted {
+    pub old: Address,
+    pub new: Address,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct AdminRenounced {
+    pub old: Address,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct PassportRegistered {
+    pub agent_id: U256,
+    pub nullifier: U256,
+    pub spend_cap: U256,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct AuditRecord {
+    pub action: Symbol,
+    pub actor: Address,
+    pub root: BytesN<32>,
+    pub ledger: u32,
+    pub success: bool,
 }
 
 #[contracttype]
@@ -77,49 +124,18 @@ pub struct Attestation {
 }
 
 #[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AuditRecord {
-    pub action: Symbol,
-    pub actor: Address,
-    pub root: BytesN<32>,
-    pub ledger: u32,
+#[derive(Clone, Debug)]
+pub struct VerifyInput {
+    pub proof: Groth16Proof,
+    pub public_inputs: Vec<U256>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct VerifyResult {
+    pub root: U256,
     pub success: bool,
-}
-
-#[contractevent(topics = ["passport"], data_format = "vec")]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PassportRegistered {
-    #[topic]
-    pub agent_id: U256,
-    pub nullifier: U256,
-    pub spend_cap: U256,
-}
-
-#[contractevent(topics = ["verifier"], data_format = "vec")]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct VerifierChanged {
-    pub old: Address,
-    pub new: Address,
-}
-
-#[contractevent(topics = ["admin_tr"], data_format = "vec")]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AdminTransferStarted {
-    pub old: Address,
-    pub new: Address,
-}
-
-#[contractevent(topics = ["admin_ch"], data_format = "vec")]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AdminChanged {
-    pub old: Option<Address>,
-    pub new: Address,
-}
-
-#[contractevent(topics = ["admin_re"], data_format = "vec")]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AdminRenounced {
-    pub old: Address,
+    pub error: Option<Symbol>,
 }
 
 #[contracttype]
@@ -155,22 +171,20 @@ impl AgentPassportValidator {
         storage.set(&DataKey::Verifier, &verifier);
         storage.set(&DataKey::RegistryRoot(initial_root), &true);
 
-        AdminChanged {
-            old: None,
-            new: admin,
-        }
-        .publish(&env);
+        env.events().publish(
+            (Symbol::new(&env, "AdminChanged"),),
+            AdminChanged {
+                old: None,
+                new: admin,
+            },
+        );
     }
 
-    /// Verify a passport proof and, if sound and unspent, mint the attestation.
-    ///
-    /// This is the load-bearing entry point: the proof *is* the authorization,
-    /// so no `require_auth` is needed — anyone relaying a valid, fresh proof
-    /// registers the agent. Returns the freshly stored [`Attestation`].
-    pub fn verify_and_register(
-        env: Env,
-        proof: Groth16Proof,
-        public_inputs: Vec<U256>,
+    /// Internal logic for verifying a single passport proof.
+    fn verify_internal(
+        env: &Env,
+        proof: &Groth16Proof,
+        public_inputs: &Vec<U256>,
     ) -> Result<Attestation, Error> {
         extend_instance_ttl(&env);
 
@@ -208,9 +222,9 @@ impl AgentPassportValidator {
             .ok_or(Error::NotInitialized)?;
         let client = verifier::Client::new(&env, &verifier_addr);
         let vproof = verifier::Groth16Proof {
-            a: proof.a,
-            b: proof.b,
-            c: proof.c,
+            a: proof.a.clone(),
+            b: proof.b.clone(),
+            c: proof.c.clone(),
         };
         match client.try_verify(&vproof, &public_inputs) {
             Ok(Ok(true)) => {}
@@ -232,14 +246,68 @@ impl AgentPassportValidator {
         persistent.set(&pass_key, &attestation);
         persistent.extend_ttl(&pass_key, TTL_THRESHOLD, TTL_BUMP);
 
-        PassportRegistered {
-            agent_id,
-            nullifier,
-            spend_cap,
-        }
-        .publish(&env);
+        env.events().publish(
+            (Symbol::new(&env, "PassportRegistered"),),
+            PassportRegistered {
+                agent_id,
+                nullifier,
+                spend_cap,
+            },
+        );
 
         Ok(attestation)
+    }
+
+    /// Verify a passport proof and, if sound and unspent, mint the attestation.
+    ///
+    /// This is the load-bearing entry point: the proof *is* the authorization,
+    /// so no `require_auth` is needed — anyone relaying a valid, fresh proof
+    /// registers the agent. Returns the freshly stored [`Attestation`].
+    pub fn verify_and_register(
+        env: Env,
+        proof: Groth16Proof,
+        public_inputs: Vec<U256>,
+    ) -> Result<Attestation, Error> {
+        Self::verify_internal(&env, &proof, &public_inputs)
+    }
+
+    /// Verify multiple proofs in a single call.
+    ///
+    /// Returns results for all proofs; doesn't short-circuit on first failure.
+    /// Each proof is validated independently. Max batch size is 8.
+    pub fn verify_batch(env: Env, proofs: Vec<VerifyInput>) -> Result<Vec<VerifyResult>, Error> {
+        if proofs.len() > 8 {
+            return Err(Error::BatchTooLarge);
+        }
+
+        let mut results = Vec::new(&env);
+        for input in proofs.iter() {
+            let root = input.public_inputs.get(0).unwrap_or(U256::from_u32(&env, 0));
+            match Self::verify_internal(&env, &input.proof, &input.public_inputs) {
+                Ok(_) => {
+                    results.push_back(VerifyResult {
+                        root,
+                        success: true,
+                        error: None,
+                    });
+                }
+                Err(e) => {
+                    let error_sym = match e {
+                        Error::BadPublicInputs => Some(Symbol::new(&env, "BadPublicInputs")),
+                        Error::NullifierUsed => Some(Symbol::new(&env, "NullifierUsed")),
+                        Error::InvalidProof => Some(Symbol::new(&env, "InvalidProof")),
+                        Error::NotInitialized => Some(Symbol::new(&env, "NotInitialized")),
+                        _ => Some(Symbol::new(&env, "Error")),
+                    };
+                    results.push_back(VerifyResult {
+                        root,
+                        success: false,
+                        error: error_sym,
+                    });
+                }
+            }
+        }
+        Ok(results)
     }
 
     /// True iff `agent_id` holds a minted zk-passport.
@@ -284,7 +352,13 @@ impl AgentPassportValidator {
 
         env.storage().instance().set(&DataKey::Verifier, &verifier);
 
-        VerifierChanged { old, new: verifier }.publish(&env);
+        env.events().publish(
+            (Symbol::new(&env, "VerifierChanged"),),
+            VerifierChanged {
+                old,
+                new: verifier,
+            },
+        );
 
         extend_instance_ttl(&env);
         Ok(())
@@ -331,11 +405,13 @@ impl AgentPassportValidator {
             .instance()
             .set(&DataKey::PendingAdmin, &new_admin);
 
-        AdminTransferStarted {
-            old: admin,
-            new: new_admin,
-        }
-        .publish(&env);
+        env.events().publish(
+            (Symbol::new(&env, "AdminTransferStarted"),),
+            AdminTransferStarted {
+                old: admin,
+                new: new_admin,
+            },
+        );
 
         Ok(())
     }
@@ -356,11 +432,13 @@ impl AgentPassportValidator {
             .set(&DataKey::Admin, &pending_admin);
         env.storage().instance().remove(&DataKey::PendingAdmin);
 
-        AdminChanged {
-            old: old_admin,
-            new: pending_admin,
-        }
-        .publish(&env);
+        env.events().publish(
+            (Symbol::new(&env, "AdminChanged"),),
+            AdminChanged {
+                old: old_admin,
+                new: pending_admin,
+            },
+        );
 
         Ok(())
     }
@@ -377,7 +455,10 @@ impl AgentPassportValidator {
         env.storage().instance().remove(&DataKey::Admin);
         env.storage().instance().remove(&DataKey::PendingAdmin);
 
-        AdminRenounced { old: admin }.publish(&env);
+        env.events().publish(
+            (Symbol::new(&env, "AdminRenounced"),),
+            AdminRenounced { old: admin },
+        );
 
         Ok(())
     }
