@@ -281,6 +281,15 @@ export function evaluatePaymentAuthorization(
 ): { authorized: boolean; reason: string; cap?: string } {
   if (!passport)
     return { authorized: false, reason: "No passport — agent not verified" };
+
+  if (!/^[0-9]+$/.test(amount) || BigInt(amount) <= 0n) {
+    return {
+      authorized: false,
+      cap: passport.spend_cap,
+      reason: "Invalid payment amount",
+    };
+  }
+
   const ok = BigInt(passport.spend_cap) >= BigInt(amount);
   return {
     authorized: ok,

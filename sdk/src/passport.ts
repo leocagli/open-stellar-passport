@@ -25,6 +25,14 @@ export interface AgentPassportConfig {
   signTransaction?: ClientOptions["signTransaction"];
 }
 
+export function parsePositivePaymentAmount(amount: bigint | string): bigint | undefined {
+  if (typeof amount === "bigint") return amount > 0n ? amount : undefined;
+  if (!/^[0-9]+$/.test(amount)) return undefined;
+
+  const parsed = BigInt(amount);
+  return parsed > 0n ? parsed : undefined;
+}
+
 export class AgentPassport {
   readonly client: Client;
   private readonly artifacts: PassportArtifacts;
@@ -86,8 +94,11 @@ export class AgentPassport {
    * cap covers `amount`. This is the one call a payment hub needs.
    */
   async authorizePayment(agentId: bigint | string, amount: bigint | string): Promise<boolean> {
+    const parsedAmount = parsePositivePaymentAmount(amount);
+    if (!parsedAmount) return false;
+
     const passport = await this.getPassport(agentId);
     if (!passport) return false;
-    return BigInt(passport.spend_cap) >= BigInt(amount);
+    return BigInt(passport.spend_cap) >= parsedAmount;
   }
 }

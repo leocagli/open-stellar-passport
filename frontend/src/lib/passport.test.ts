@@ -40,4 +40,15 @@ describe("evaluatePaymentAuthorization", () => {
       reason: "No passport — agent not verified",
     });
   });
+
+  it.each(["0", "-1", "1.5", "abc"])(
+    "rejects invalid payment amount %s",
+    (amount) => {
+      expect(evaluatePaymentAuthorization({ spend_cap: "500" }, amount)).toEqual({
+        authorized: false,
+        cap: "500",
+        reason: "Invalid payment amount",
+      });
+    },
+  );
 });
