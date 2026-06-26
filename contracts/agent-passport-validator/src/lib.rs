@@ -17,8 +17,8 @@
 //!   [0] registryRoot   [1] nullifierHash   [2] agentId   [3] spendCap
 
 use soroban_sdk::{
-    contract, contracterror, contractevent, contractimpl, contracttype, panic_with_error,
-    symbol_short, Address, BytesN, Env, Vec, U256,
+    contract, contracterror, contractevent, contractimpl, contracttype, panic_with_error, Address,
+    BytesN, Env, Vec, U256,
 };
 
 /// Generates a typed client for the already-deployed verifier straight from its
@@ -217,6 +217,11 @@ impl AgentPassportValidator {
             .instance()
             .get(&DataKey::Verifier)
             .ok_or(Error::NotInitialized)
+    }
+
+    /// Public heartbeat that lets callers keep instance storage alive.
+    pub fn bump_ttl(env: Env) {
+        extend_instance_ttl(&env);
     }
 
     /// Admin-only: re-point to a new verifier (e.g. after a circuit upgrade).

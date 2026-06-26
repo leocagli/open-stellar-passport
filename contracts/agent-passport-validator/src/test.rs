@@ -63,12 +63,20 @@ fn real_public_inputs(env: &Env) -> Vec<U256> {
 
 /// Deploy the real verifier WASM + our validator, init the wiring, return both.
 fn setup(env: &Env, initial_root: U256) -> AgentPassportValidatorClient<'static> {
+    let (client, _) = setup_with_id(env, initial_root);
+    client
+}
+
+fn setup_with_id(
+    env: &Env,
+    initial_root: U256,
+) -> (AgentPassportValidatorClient<'static>, Address) {
     let verifier_addr = env.register(verifier::WASM, ());
     let validator_addr = env.register(AgentPassportValidator, ());
     let client = AgentPassportValidatorClient::new(env, &validator_addr);
     let admin = Address::generate(env);
     client.init(&admin, &verifier_addr, &initial_root);
-    client
+    (client, validator_addr)
 }
 
 #[test]
@@ -95,7 +103,7 @@ fn registers_a_valid_passport() {
 #[test]
 fn typed_passport_registered_event_keeps_legacy_shape() {
     let env = Env::default();
-    let (client, validator_addr) = setup_with_id(&env);
+    let (client, validator_addr) = setup_with_id(&env, u256(&env, PI_ROOT));
     let agent_id = u256(&env, PI_AGENT);
     let nullifier = u256(&env, PI_NULLIFIER);
     let spend_cap = u256(&env, PI_CAP);
@@ -166,7 +174,7 @@ fn rejects_wrong_input_count() {
 fn public_heartbeat_keeps_instance_storage_alive() {
     let env = Env::default();
     env.ledger().set_sequence_number(1000);
-    let client = setup(&env);
+    let client = setup(&env, u256(&env, PI_ROOT));
     let verifier = client.verifier();
 
     env.ledger().set_sequence_number(1000 + TTL_THRESHOLD + 1);
