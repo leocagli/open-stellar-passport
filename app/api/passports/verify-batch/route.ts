@@ -3,7 +3,7 @@ import { verifyPassportBatch } from "@/lib/passport/passport"
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json().catch(() => ({}))
+    const body = (await req.json().catch(() => ({}))) as any
     const { passportIds } = body ?? {}
 
     if (!Array.isArray(passportIds) || passportIds.length === 0) {
