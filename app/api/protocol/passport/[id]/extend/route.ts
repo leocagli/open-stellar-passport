@@ -26,8 +26,15 @@ export async function POST(req: Request, context: RouteContext) {
 
     const { id } = await context.params
     const agentId = decodeURIComponent(id)
-    const actor = req.headers.get("x-stellar-address") || "admin"
-    const passport = extendPassport(agentId, body.additionalDays, actor)
+    const callerAddress = req.headers.get("x-stellar-address")
+    if (!callerAddress || callerAddress !== agentId) {
+      return NextResponse.json(
+        { ok: false, error: "Unauthorized" },
+        { status: 401, headers: { "Cache-Control": "no-store" } },
+      )
+    }
+
+    const passport = extendPassport(agentId, body.additionalDays, callerAddress)
 
     return NextResponse.json(
       passport,

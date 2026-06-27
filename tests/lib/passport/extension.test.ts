@@ -30,15 +30,23 @@ const AGENT_ID = "agent extension/1"
 const ACTOR = "issuer-extension-1"
 const ORIGINAL_EXPIRY = "2026-07-01T12:30:00.000Z"
 
-function request(body: unknown): Request {
+function request(
+  body: unknown,
+  callerAddress: string | null = AGENT_ID,
+  agentId: string = AGENT_ID,
+): Request {
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  }
+  if (callerAddress !== null) {
+    headers["x-stellar-address"] = callerAddress
+  }
+
   return new Request(
-    `http://localhost/api/protocol/passport/${encodeURIComponent(AGENT_ID)}/extend`,
+    `http://localhost/api/protocol/passport/${encodeURIComponent(agentId)}/extend`,
     {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-stellar-address": ACTOR,
-      },
+      headers,
       body: JSON.stringify(body),
     },
   )
@@ -77,7 +85,7 @@ describe("passport validity extension", () => {
     expect(entries[0]).toMatchObject({
       passportId: PASSPORT_ID,
       action: "extended",
-      actor: ACTOR,
+      actor: AGENT_ID,
       metadata: {
         oldExpiresAt: ORIGINAL_EXPIRY,
         newExpiresAt: "2026-07-08T12:30:00.000Z",
@@ -104,6 +112,30 @@ describe("passport validity extension", () => {
     expect(listAuditEntries(PASSPORT_ID)).toHaveLength(0)
   })
 
+  it("returns 401 when x-stellar-address is missing", async () => {
+    issuePassport(PASSPORT_ID, AGENT_ID, ACTOR, { allowTransfer: true }, ORIGINAL_EXPIRY)
+    const response = await extendPassportApi(request({ additionalDays: 7 }, null), {
+      params: Promise.resolve({ id: encodeURIComponent(AGENT_ID) }),
+    })
+
+    expect(response.status).toBe(401)
+    expect(await response.json()).toEqual({ ok: false, error: "Unauthorized" })
+    expect(getPassport(PASSPORT_ID)?.expiresAt).toBe(ORIGINAL_EXPIRY)
+    expect(listAuditEntries(PASSPORT_ID)).toHaveLength(1)
+  })
+
+  it("returns 401 when x-stellar-address does not match the agent ID", async () => {
+    issuePassport(PASSPORT_ID, AGENT_ID, ACTOR, { allowTransfer: true }, ORIGINAL_EXPIRY)
+    const response = await extendPassportApi(request({ additionalDays: 7 }, ACTOR), {
+      params: Promise.resolve({ id: encodeURIComponent(AGENT_ID) }),
+    })
+
+    expect(response.status).toBe(401)
+    expect(await response.json()).toEqual({ ok: false, error: "Unauthorized" })
+    expect(getPassport(PASSPORT_ID)?.expiresAt).toBe(ORIGINAL_EXPIRY)
+    expect(listAuditEntries(PASSPORT_ID)).toHaveLength(1)
+  })
+
   it.each([
     ["missing", {}],
     ["zero", { additionalDays: 0 }],
@@ -127,8 +159,9 @@ describe("passport validity extension", () => {
   })
 
   it("returns 404 when the agent has no passport", async () => {
-    const response = await extendPassportApi(request({ additionalDays: 7 }), {
-      params: Promise.resolve({ id: encodeURIComponent("missing-agent") }),
+    const agentId = "missing-agent"
+    const response = await extendPassportApi(request({ additionalDays: 7 }, agentId, agentId), {
+      params: Promise.resolve({ id: encodeURIComponent(agentId) }),
     })
 
     expect(response.status).toBe(404)
