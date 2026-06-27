@@ -26,6 +26,26 @@ export interface PassportConfig {
   circuitBreaker?: CircuitBreakerConfig;
 }
 
+export interface SpendAnalytics {
+  agentId: string;
+  period: {
+    dayStart: string;
+    weekStart: string;
+  };
+  spent: {
+    daily: string;
+    weekly: string;
+  };
+  limits: {
+    dailyMaxXlm: string;
+    weeklyMaxXlm: string;
+  };
+  remaining: {
+    daily: string;
+    weekly: string;
+  };
+}
+
 interface AuthorizeEvent {
   agentId: string;
   amount: number;
@@ -49,6 +69,7 @@ export class PassportStore {
   private events: AuthorizeEvent[] = [];
   private cbStates = new Map<string, { failures: number; revoked: boolean }>();
   private passports = new Map<string, PassportRecord>();
+  private spendLimitsByAgent = new Map<string, SpendLimits>();
 
   // ------------------------------------------------------------------ issuance
 
@@ -99,6 +120,9 @@ export class PassportStore {
   // ------------------------------------------------------------------ registration
 
   register(agentId: string, config?: PassportConfig): void {
+    if (config?.spendLimits) {
+      this.spendLimitsByAgent.set(agentId, { ...config.spendLimits });
+    }
     if (config?.circuitBreaker) {
       this.cbStates.set(agentId, { failures: 0, revoked: false });
     }
@@ -127,6 +151,10 @@ export class PassportStore {
     const passport = this.passports.get(agentId);
     if (passport && new Date(passport.expiresAt) < new Date()) {
       return { ok: false, reason: "PassportExpired", expiredAt: passport.expiresAt };
+    }
+
+    if (config?.spendLimits) {
+      this.spendLimitsByAgent.set(agentId, { ...config.spendLimits });
     }
 
     if (config?.circuitBreaker && !this.cbStates.has(agentId)) {
@@ -178,6 +206,50 @@ export class PassportStore {
     return { ok: true };
   }
 
+  getSpendAnalytics(agentId: string, now = Date.now()): SpendAnalytics | undefined {
+    const hasPassport = this.passports.has(agentId);
+    const hasHistory = this.events.some((event) => event.agentId === agentId);
+    if (!hasPassport && !hasHistory) return undefined;
+
+    const dayStart = utcDayStart(now);
+    const weekStart = utcWeekStart(now);
+    const successfulEvents = this.events.filter(
+      (event) => event.agentId === agentId && event.ok,
+    );
+    const daily = successfulEvents
+      .filter((event) => event.timestamp >= dayStart)
+      .reduce((total, event) => total + BigInt(event.amount), 0n);
+    const weekly = successfulEvents
+      .filter((event) => event.timestamp >= weekStart)
+      .reduce((total, event) => total + BigInt(event.amount), 0n);
+
+    const limits = this.spendLimitsByAgent.get(agentId);
+    const dailyMax = BigInt(limits?.dailyMaxXlm ?? 0);
+    const weeklyMax = BigInt(limits?.weeklyMaxXlm ?? 0);
+    const dailyRemaining = dailyMax > daily ? dailyMax - daily : 0n;
+    const weeklyRemaining = weeklyMax > weekly ? weeklyMax - weekly : 0n;
+
+    return {
+      agentId,
+      period: {
+        dayStart: new Date(dayStart).toISOString(),
+        weekStart: new Date(weekStart).toISOString(),
+      },
+      spent: {
+        daily: daily.toString(),
+        weekly: weekly.toString(),
+      },
+      limits: {
+        dailyMaxXlm: dailyMax.toString(),
+        weeklyMaxXlm: weeklyMax.toString(),
+      },
+      remaining: {
+        daily: dailyRemaining.toString(),
+        weekly: weeklyRemaining.toString(),
+      },
+    };
+  }
+
   private fail(
     agentId: string,
     cbState: { failures: number; revoked: boolean } | undefined,
@@ -211,6 +283,7 @@ export class PassportStore {
     this.events.length = 0;
     this.cbStates.clear();
     this.passports.clear();
+    this.spendLimitsByAgent.clear();
   }
 }
 
