@@ -13,6 +13,7 @@ export interface PassportRecord {
   status: PassportStatus
   config: PassportConfig
   createdAt: string
+  expiresAt?: string | null
 }
 
 type PassportDb = Map<string, PassportRecord>
@@ -94,13 +95,20 @@ export function getAllPassports(): PassportRecord[] {
   return Array.from(getDb().values())
 }
 
-export function issuePassport(id: string, agentId: string, actor: string, config: PassportConfig = { allowTransfer: true }): PassportRecord {
+export function issuePassport(
+  id: string,
+  agentId: string,
+  actor: string,
+  config: PassportConfig = { allowTransfer: true },
+  expiresAt?: string | null,
+): PassportRecord {
   const record: PassportRecord = {
     id: normalizeId(id),
     agentId,
     status: "active",
     config,
     createdAt: new Date().toISOString(),
+    expiresAt,
   }
   setPassport(record)
   appendAuditEntry({
@@ -221,4 +229,3 @@ export function verifyPassportBatch(passportIds: string[]): BatchVerificationRes
     invalidCount
   }
 }
-
