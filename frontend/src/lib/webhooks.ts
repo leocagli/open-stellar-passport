@@ -1,6 +1,6 @@
 export interface WebhookEventPayload {
   event: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 /**
