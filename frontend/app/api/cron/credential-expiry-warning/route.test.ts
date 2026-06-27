@@ -16,13 +16,14 @@ vi.mock("next/server", () => ({
 }));
 
 // Mock notification-store to spy on calls without side effects
-vi.mock("../../../../src/lib/notifications/notification-store", () => ({
+vi.mock("@/lib/notifications/notification-store", () => ({
   addNotification: vi.fn(),
 }));
 
 // Imports must come AFTER vi.mock calls (hoisting)
 import { GET } from "./route";
-import { addNotification } from "../../../../src/lib/notifications/notification-store";
+import { addNotification } from "@/lib/notifications/notification-store";
+
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
