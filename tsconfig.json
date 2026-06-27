@@ -14,5 +14,5 @@
     },
     "types": ["node"]
   },
-  "include": ["lib/**/*.ts", "app/**/*.ts", "tests/**/*.ts", "vitest.config.ts"]
+  "include": ["lib/**/*.ts", "app/**/*.ts", "tests/**/*.ts", "vitest.config.ts", "next-env.d.ts"]
 }
