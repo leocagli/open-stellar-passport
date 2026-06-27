@@ -12,6 +12,7 @@ export enum PassportError {
   BatchTooLarge = "BatchTooLarge",
   UnknownRegistryRoot = "UnknownRegistryRoot",
   CredentialExpired = "CredentialExpired",
+  UnauthorizedIssuer = "UnauthorizedIssuer",
   Unknown = "Unknown",
 }
 
@@ -59,6 +60,8 @@ const mapSymbolToPassportError = (err: unknown): PassportError | undefined => {
       return PassportError.UnknownRegistryRoot;
     case "CredentialExpired":
       return PassportError.CredentialExpired;
+    case "UnauthorizedIssuer":
+      return PassportError.UnauthorizedIssuer;
     default:
       return PassportError.Unknown;
   }
@@ -155,6 +158,26 @@ export class PassportClient {
     }
 
     return false;
+  }
+
+  /**
+   * Trusted issuer helpers
+   */
+  get issuers() {
+    return {
+      add: async (address: string): Promise<void> => {
+        const tx = await (this.typed as any).add_trusted_issuer({ issuer: address });
+        await tx.signAndSend();
+      },
+      remove: async (address: string): Promise<void> => {
+        const tx = await (this.typed as any).remove_trusted_issuer({ issuer: address });
+        await tx.signAndSend();
+      },
+      isTrusted: async (address: string): Promise<boolean> => {
+        const result = await (this.typed as any).is_trusted_issuer({ issuer: address });
+        return Boolean(result.result ?? result);
+      },
+    };
   }
 }
 

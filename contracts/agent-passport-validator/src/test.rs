@@ -83,7 +83,7 @@ fn setup_with_admin_id(
     let verifier_addr = env.register(verifier::WASM, ());
     let validator_addr = env.register(AgentPassportValidator, ());
     let client = AgentPassportValidatorClient::new(env, &validator_addr);
-    client.init(&admin, &verifier_addr, &initial_root);
+    client.init(&admin, &verifier_addr, &initial_root, &soroban_sdk::Vec::new(env));
     (validator_addr, client)
 }
 
@@ -269,7 +269,7 @@ fn init_is_one_shot() {
     let verifier_addr = Address::generate(&env);
     let root = u256(&env, PI_ROOT);
     // Second init must panic with AlreadyInitialized.
-    client.init(&admin, &verifier_addr, &root);
+    client.init(&admin, &verifier_addr, &root, &soroban_sdk::Vec::new(&env));
 }
 
 #[test]
@@ -389,6 +389,7 @@ fn renounce_admin() {
         &Address::generate(&env),
         &Address::generate(&env),
         &U256::from_u32(&env, 123),
+        &soroban_sdk::Vec::new(&env),
     );
     assert!(res.is_err());
 }
@@ -402,6 +403,10 @@ fn test_audit_logging() {
     let root = BytesN::from_array(&env, &[0u8; 32]);
 
     env.mock_all_auths();
+    
+    // Add actor as a trusted issuer first
+    client.add_trusted_issuer(&actor);
+
     client.issue_credential(&actor, &root);
     assert_eq!(client.audit_count(), 1);
 
@@ -459,4 +464,49 @@ fn checks_expiry_date() {
     env.ledger().set_timestamp(102);
     let err = client.try_verify_credential(&actor, &root, &101, &true);
     assert_eq!(err, Err(Ok(Error::CredentialExpired)));
+}
+
+#[test]
+fn trusted_issuer_flow() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let initial_issuer = Address::generate(&env);
+    
+    let verifier_addr = env.register(verifier::WASM, ());
+    let validator_addr = env.register(AgentPassportValidator, ());
+    let client = AgentPassportValidatorClient::new(&env, &validator_addr);
+    
+    let mut initial_issuers = soroban_sdk::Vec::new(&env);
+    initial_issuers.push_back(initial_issuer.clone());
+    
+    client.init(&admin, &verifier_addr, &u256(&env, PI_ROOT), &initial_issuers);
+    
+    let new_issuer = Address::generate(&env);
+    let root = BytesN::from_array(&env, &[0u8; 32]);
+    
+    env.mock_all_auths();
+
+    // Initial issuer is trusted
+    assert!(client.is_trusted_issuer(&initial_issuer));
+    client.issue_credential(&initial_issuer, &root);
+    
+    // New issuer is not trusted
+    assert!(!client.is_trusted_issuer(&new_issuer));
+    let res = client.try_issue_credential(&new_issuer, &root);
+    assert_eq!(res, Err(Ok(Error::UnauthorizedIssuer)));
+    
+    // Admin adds new issuer
+    client.add_trusted_issuer(&new_issuer);
+    assert!(client.is_trusted_issuer(&new_issuer));
+    
+    // Now new issuer can issue credentials
+    client.issue_credential(&new_issuer, &root);
+    
+    // Admin removes initial issuer
+    client.remove_trusted_issuer(&initial_issuer);
+    assert!(!client.is_trusted_issuer(&initial_issuer));
+    
+    // Initial issuer can no longer issue credentials
+    let res2 = client.try_issue_credential(&initial_issuer, &root);
+    assert_eq!(res2, Err(Ok(Error::UnauthorizedIssuer)));
 }
