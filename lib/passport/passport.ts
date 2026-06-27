@@ -174,3 +174,51 @@ export function clonePassport(id: string, newAgentId: string, actor: string, rea
   return clonedRecord
 }
 
+export interface BatchVerificationResult {
+  passportId: string
+  status: PassportStatus | null
+  agentId: string | null
+  valid: boolean
+  error?: string
+}
+
+export interface BatchVerificationResponse {
+  results: BatchVerificationResult[]
+  total: number
+  validCount: number
+  invalidCount: number
+}
+
+export function verifyPassportBatch(passportIds: string[]): BatchVerificationResponse {
+  const results: BatchVerificationResult[] = passportIds.map(id => {
+    const passport = getPassport(id)
+    if (!passport) {
+      return {
+        passportId: id,
+        status: null,
+        agentId: null,
+        valid: false,
+        error: "not_found"
+      }
+    }
+    const valid = passport.status === "active"
+    return {
+      passportId: id,
+      status: passport.status,
+      agentId: passport.agentId,
+      valid
+    }
+  })
+
+  const total = results.length
+  const validCount = results.filter(r => r.valid).length
+  const invalidCount = total - validCount
+
+  return {
+    results,
+    total,
+    validCount,
+    invalidCount
+  }
+}
+
