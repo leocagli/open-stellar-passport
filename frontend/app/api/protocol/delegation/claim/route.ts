@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     delegationStore.recordClaim(token.tokenId);
 
     return NextResponse.json({ success: true, reason: "claimed" }, { status: 200 });
-  } catch (error) {
+  } catch {
     return NextResponse.json({ reason: "invalid_request" }, { status: 400 });
   }
 }
