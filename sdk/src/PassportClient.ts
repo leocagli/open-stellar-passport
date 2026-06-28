@@ -1,4 +1,10 @@
-import { Client, type VerifyInput, type VerifyResult, type Groth16Proof, networks } from "../bindings/src/index.js";
+import {
+  Client,
+  type VerifyInput,
+  type VerifyResult,
+  type Groth16Proof,
+  networks,
+} from "../bindings/src/index.js";
 
 /**
  * Errors surfaced by the PassportValidator contract.
@@ -13,6 +19,7 @@ export enum PassportError {
   UnknownRegistryRoot = "UnknownRegistryRoot",
   CredentialExpired = "CredentialExpired",
   UnauthorizedIssuer = "UnauthorizedIssuer",
+  RevokedCredential = "RevokedCredential",
   Unknown = "Unknown",
 }
 
@@ -35,6 +42,12 @@ export function buildVerifyCall(input: VerifyCredentialInput): VerifyInput {
 }
 
 export type VerifyBatchInput = VerifyInput;
+
+export type VerifyMultiCredentialInput = {
+  roots: Buffer[];
+  proof: Buffer;
+  publicInputs: bigint[];
+};
 
 export type VerifyBatchResult = VerifyResult & {
   /** mapped error */
@@ -62,6 +75,8 @@ const mapSymbolToPassportError = (err: unknown): PassportError | undefined => {
       return PassportError.CredentialExpired;
     case "UnauthorizedIssuer":
       return PassportError.UnauthorizedIssuer;
+    case "RevokedCredential":
+      return PassportError.RevokedCredential;
     default:
       return PassportError.Unknown;
   }
@@ -138,6 +153,26 @@ export class PassportClient {
     return out;
   }
 
+  async verifyMultiCredential(
+    input: VerifyMultiCredentialInput,
+  ): Promise<{ success: boolean; error?: PassportError }> {
+    try {
+      const tx = await (this.typed as any).verify_multi_credential({
+        roots: input.roots,
+        proof: input.proof,
+        public_inputs: input.publicInputs.map((x) => Number(x)),
+      });
+      const { result } = await tx.signAndSend();
+      const value = result.unwrap?.() ?? result;
+      return { success: Boolean(value) };
+    } catch (error) {
+      return {
+        success: false,
+        error: mapSymbolToPassportError((error as any)?.message),
+      };
+    }
+  }
+
   /**
    * Check whether a registry root has been revoked.
    *
@@ -152,7 +187,11 @@ export class PassportClient {
       const tx = await this.typed.get_audit_entry({ seq: i });
       const rec = tx.result ?? undefined;
       if (!rec) continue;
-      if (rec.action === "revoke" && Buffer.isBuffer(rec.root) && rec.root.equals(root)) {
+      if (
+        rec.action === "revoke" &&
+        Buffer.isBuffer(rec.root) &&
+        rec.root.equals(root)
+      ) {
         return true;
       }
     }
@@ -180,4 +219,3 @@ export class PassportClient {
     };
   }
 }
-
