@@ -410,6 +410,7 @@ fn verify_multi_credential_accepts_two_valid_roots() {
     let public_inputs = Vec::from_array(&env, [11u64, 12u64, 21u64, 22u64]);
 
     env.mock_all_auths();
+    client.add_trusted_issuer(&actor);
     client.issue_credential(&actor, &root_a);
     client.issue_credential(&actor, &root_b);
 
@@ -437,6 +438,7 @@ fn verify_multi_credential_fails_when_any_root_is_revoked() {
     let public_inputs = Vec::from_array(&env, [31u64, 32u64, 41u64, 42u64]);
 
     env.mock_all_auths();
+    client.add_trusted_issuer(&actor);
     client.issue_credential(&actor, &root_a);
     client.issue_credential(&actor, &root_b);
     client.revoke_credential(&actor, &root_b);

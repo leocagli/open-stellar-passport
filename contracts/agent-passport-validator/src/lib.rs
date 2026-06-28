@@ -70,7 +70,7 @@ pub enum Error {
     /// The issuer is not trusted.
     UnauthorizedIssuer = 9,
     /// One of the credential roots in a multi-proof has been revoked.
-    RevokedCredential = 8,
+    RevokedCredential = 10,
 }
 
 #[contracttype]
