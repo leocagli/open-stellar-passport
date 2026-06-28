@@ -47,7 +47,8 @@ export class AgentPassport {
 
   /**
    * Submit a proof to mint the agent's passport. Returns the stored attestation.
-   * Throws `NullifierUsed` if replayed, `InvalidProof` if the proof is unsound.
+   * Throws `NullifierUsed` if replayed, `PassportAlreadyExists` if the agent
+   * already has a passport, or `InvalidProof` if the proof is unsound.
    */
   async register(p: SorobanProof): Promise<Attestation> {
     const tx = await this.client.verify_and_register({

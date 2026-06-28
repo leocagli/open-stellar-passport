@@ -63,6 +63,8 @@ pub enum Error {
     InvalidProof = 5,
     /// The registry root is not in the allow-list.
     UnknownRegistryRoot = 6,
+    /// This agent already has a passport attestation.
+    PassportAlreadyExists = 7,
 }
 
 #[contracttype]
@@ -187,6 +189,13 @@ impl AgentPassportValidator {
             return Err(Error::NullifierUsed);
         }
 
+        // A passport is immutable for an agent id; callers must revoke/expire
+        // through a future flow before re-issuing for the same agent.
+        let pass_key = DataKey::Passport(agent_id.clone());
+        if persistent.has(&pass_key) {
+            return Err(Error::PassportAlreadyExists);
+        }
+
         // (2) cross-contract soundness check. `try_verify` so an invalid proof
         // surfaces as our typed error instead of trapping the whole tx.
         let verifier_addr: Address = env
@@ -216,7 +225,6 @@ impl AgentPassportValidator {
             spend_cap: spend_cap.clone(),
             ledger: env.ledger().sequence(),
         };
-        let pass_key = DataKey::Passport(agent_id.clone());
         persistent.set(&pass_key, &attestation);
         persistent.extend_ttl(&pass_key, TTL_THRESHOLD, TTL_BUMP);
 

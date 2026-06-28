@@ -132,6 +132,30 @@ fn rejects_nullifier_replay() {
 }
 
 #[test]
+fn rejects_existing_agent_passport_before_overwrite() {
+    let env = Env::default();
+    let client = setup(&env, u256(&env, PI_ROOT));
+    let agent_id = u256(&env, PI_AGENT);
+
+    let first = client.verify_and_register(&real_proof(&env), &real_public_inputs(&env));
+
+    // Simulate a second registration attempt for the same agent id with a
+    // different nullifier. It must fail before any path can overwrite the
+    // stored passport for that agent.
+    let mut inputs = real_public_inputs(&env);
+    inputs.set(
+        IDX_NULLIFIER,
+        u256(&env, PI_NULLIFIER).add(&U256::from_u32(&env, 1)),
+    );
+
+    let res = client.try_verify_and_register(&real_proof(&env), &inputs);
+    assert_eq!(res, Err(Ok(Error::PassportAlreadyExists)));
+
+    let stored = client.get_passport(&agent_id).unwrap();
+    assert_eq!(stored, first);
+}
+
+#[test]
 fn rejects_tampered_public_input() {
     let env = Env::default();
     let client = setup(&env, u256(&env, PI_ROOT));

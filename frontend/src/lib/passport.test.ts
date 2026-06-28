@@ -7,6 +7,9 @@ describe("parseContractError", () => {
       parseContractError(new Error("simulation failed: Error(Contract, #4)")),
     ).toBe("NullifierUsed");
     expect(parseContractError("host trapped with #5")).toBe("InvalidProof");
+    expect(parseContractError("host trapped with #7")).toBe(
+      "PassportAlreadyExists",
+    );
   });
 
   it("truncates unknown verbose errors for display", () => {

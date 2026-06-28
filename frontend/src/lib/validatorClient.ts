@@ -52,7 +52,15 @@ export const Errors = {
   /**
    * The Groth16 proof did not verify against the embedded key.
    */
-  5: {message:"InvalidProof"}
+  5: {message:"InvalidProof"},
+  /**
+   * The registry root is not in the allow-list.
+   */
+  6: {message:"UnknownRegistryRoot"},
+  /**
+   * This agent already has a passport attestation.
+   */
+  7: {message:"PassportAlreadyExists"}
 }
 
 
