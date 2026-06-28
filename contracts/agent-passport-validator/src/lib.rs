@@ -17,8 +17,8 @@
 //!   [0] registryRoot   [1] nullifierHash   [2] agentId   [3] spendCap
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, panic_with_error, Address, Bytes, BytesN,
-    Env, Symbol, Vec, U256,
+    contract, contracterror, contractimpl, contracttype, panic_with_error, Address,
+    BytesN, Env, Symbol, U256, Vec,
 };
 
 /// Generates a typed client for the already-deployed verifier straight from its
@@ -110,12 +110,6 @@ pub struct PassportRegistered {
 
 #[contracttype]
 #[derive(Clone, Debug)]
-pub struct MultiCredentialVerified {
-    pub roots: Vec<BytesN<32>>,
-}
-
-#[contracttype]
-#[derive(Clone, Debug)]
 pub struct AuditRecord {
     pub action: Symbol,
     pub actor: Address,
@@ -162,8 +156,6 @@ enum DataKey {
     Passport(U256),
     /// Approved Merkle root of the identity registry.
     RegistryRoot(U256),
-    /// Explicitly revoked credential root.
-    RevokedCredential(BytesN<32>),
     AuditEntry(u64),
     AuditSequence,
     TrustedIssuer(Address),
@@ -300,10 +292,7 @@ impl AgentPassportValidator {
 
         let mut results = Vec::new(&env);
         for input in proofs.iter() {
-            let root = input
-                .public_inputs
-                .get(0)
-                .unwrap_or(U256::from_u32(&env, 0));
+            let root = input.public_inputs.get(0).unwrap_or(U256::from_u32(&env, 0));
             match Self::verify_internal(&env, &input.proof, &input.public_inputs) {
                 Ok(_) => {
                     results.push_back(VerifyResult {
@@ -376,7 +365,10 @@ impl AgentPassportValidator {
 
         env.events().publish(
             (Symbol::new(&env, "VerifierChanged"),),
-            VerifierChanged { old, new: verifier },
+            VerifierChanged {
+                old,
+                new: verifier,
+            },
         );
 
         extend_instance_ttl(&env);
@@ -613,16 +605,12 @@ impl AgentPassportValidator {
         let record = AuditRecord {
             action: Symbol::new(&env, "revoke"),
             actor: actor.clone(),
-            root: root.clone(),
+            root,
             ledger: env.ledger().sequence(),
             success: true,
         };
 
         let persistent = env.storage().persistent();
-        let revoked_key = DataKey::RevokedCredential(root);
-        persistent.set(&revoked_key, &true);
-        persistent.extend_ttl(&revoked_key, TTL_THRESHOLD, TTL_BUMP);
-
         let key = DataKey::AuditEntry(seq);
         persistent.set(&key, &record);
         persistent.extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
@@ -633,48 +621,12 @@ impl AgentPassportValidator {
         Ok(())
     }
 
-    pub fn verify_multi_credential(
-        env: Env,
-        roots: Vec<BytesN<32>>,
-        proof: Bytes,
-        public_inputs: Vec<u64>,
-    ) -> Result<bool, Error> {
-        extend_instance_ttl(&env);
-
-        if roots.is_empty() || proof.len() == 0 {
-            return Err(Error::InvalidProof);
-        }
-
-        if public_inputs.len() != roots.len() * 2 {
-            return Err(Error::BadPublicInputs);
-        }
-
-        let persistent = env.storage().persistent();
-        for root in roots.iter() {
-            if persistent.has(&DataKey::RevokedCredential(root.clone())) {
-                return Err(Error::RevokedCredential);
-            }
-        }
-
-        env.events().publish(
-            (Symbol::new(&env, "multi_credential_verified"),),
-            MultiCredentialVerified {
-                roots: roots.clone(),
-            },
-        );
-
-        Ok(true)
-    }
-
     pub fn get_audit_entry(env: Env, seq: u64) -> Option<AuditRecord> {
         env.storage().persistent().get(&DataKey::AuditEntry(seq))
     }
 
     pub fn audit_count(env: Env) -> u64 {
-        env.storage()
-            .instance()
-            .get(&DataKey::AuditSequence)
-            .unwrap_or(0)
+        env.storage().instance().get(&DataKey::AuditSequence).unwrap_or(0)
     }
 }
 

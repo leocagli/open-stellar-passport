@@ -60,10 +60,6 @@ fn real_public_inputs(env: &Env) -> Vec<U256> {
     )
 }
 
-fn credential_root(env: &Env, fill: u8) -> BytesN<32> {
-    BytesN::from_array(env, &[fill; 32])
-}
-
 /// Deploy the real verifier WASM + our validator, init the wiring, return both.
 fn setup(env: &Env, initial_root: U256) -> AgentPassportValidatorClient<'static> {
     let (_, _, client) = setup_with_id(env, initial_root);
