@@ -6,6 +6,11 @@ const VALID_ACTIONS: AdminAuditAction[] = [
 ]
 
 export async function GET(req: Request) {
+  const adminKey = req.headers.get("x-admin-key")
+  if (!adminKey || adminKey !== process.env.ADMIN_API_KEY) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 })
+  }
+
   try {
     const url = new URL(req.url)
     const action = url.searchParams.get("action") as AdminAuditAction | null

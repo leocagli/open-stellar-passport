@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest"
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import {
   appendAdminAuditEntry,
   listAdminAuditEntries,
@@ -37,12 +37,20 @@ const TARGET_PASSPORT = "passport-abc-123"
 const TARGET_ADMIN = "GADMIN2222222222222222222222222222222222222222222222222"
 
 describe("Admin Audit Log", () => {
+  let originalAdminApiKey: string | undefined
+
   beforeEach(() => {
+    originalAdminApiKey = process.env.ADMIN_API_KEY
+    process.env.ADMIN_API_KEY = "test-admin-api-key"
     resetAdminAuditStore()
     resetPassportStore()
     resetRevocationStore()
     resetTransferStore()
     resetAuditStore()
+  })
+
+  afterEach(() => {
+    process.env.ADMIN_API_KEY = originalAdminApiKey
   })
 
   // ─── Store-Level Tests ──────────────────────────────────────────
@@ -211,13 +219,35 @@ describe("Admin Audit Log", () => {
       expect(entries[0].metadata).toEqual({ count: 2 })
     })
 
+    it("GET /api/admin/audit returns 401 Unauthorized without x-admin-key header", async () => {
+      const req = new Request("http://localhost/api/admin/audit")
+      const res = await adminAuditGet(req)
+      expect(res.status).toBe(401)
+      const body = await res.json() as { ok: boolean; error: string }
+      expect(body.ok).toBe(false)
+      expect(body.error).toBe("Unauthorized")
+    })
+
+    it("GET /api/admin/audit returns 401 Unauthorized with incorrect x-admin-key header", async () => {
+      const req = new Request("http://localhost/api/admin/audit", {
+        headers: { "x-admin-key": "wrong-key" }
+      })
+      const res = await adminAuditGet(req)
+      expect(res.status).toBe(401)
+      const body = await res.json() as { ok: boolean; error: string }
+      expect(body.ok).toBe(false)
+      expect(body.error).toBe("Unauthorized")
+    })
+
     it("GET /api/admin/audit returns entries newest first", async () => {
 
       appendAdminAuditEntry({ action: "grant", actor: ADMIN, target: "p1" })
       appendAdminAuditEntry({ action: "revoke", actor: ADMIN, target: "p2" })
       appendAdminAuditEntry({ action: "batch_verify", actor: ADMIN, target: "p3" })
 
-      const req = new Request("http://localhost/api/admin/audit")
+      const req = new Request("http://localhost/api/admin/audit", {
+        headers: { "x-admin-key": "test-admin-api-key" }
+      })
       const res = await adminAuditGet(req)
       expect(res.status).toBe(200)
 
@@ -234,7 +264,9 @@ describe("Admin Audit Log", () => {
       appendAdminAuditEntry({ action: "revoke", actor: ADMIN, target: "p2" })
       appendAdminAuditEntry({ action: "grant", actor: TARGET_ADMIN, target: "p3" })
 
-      const req = new Request("http://localhost/api/admin/audit?action=grant&actor=" + ADMIN)
+      const req = new Request("http://localhost/api/admin/audit?action=grant&actor=" + ADMIN, {
+        headers: { "x-admin-key": "test-admin-api-key" }
+      })
       const res = await adminAuditGet(req)
       expect(res.status).toBe(200)
 
