@@ -1,10 +1,31 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { evaluatePaymentAuthorization, parseContractError } from "./passport";
+import { evaluatePaymentAuthorization, mintPassport, parseContractError } from "./passport";
 import { PassportStore } from "./passport-store";
 import {
   revokePassport as revocationStoreRevoke,
   _reset as _resetRevocation,
 } from "./passport/revocation-store";
+
+describe("mintPassport — spendCap validation", () => {
+  // These all throw before any fetch/proving happens, so no mocking is needed —
+  // if validation didn't run first, the missing `fetch` mock would blow up
+  // with a different (network) error instead.
+  it.each(["-1", "1.5", "abc", "", "0x10"])(
+    "rejects a non decimal-string spendCap %s",
+    async (spendCap) => {
+      await expect(mintPassport(spendCap)).rejects.toThrow(/spendCap must be a decimal-string/);
+    },
+  );
+
+  it("rejects a spendCap of 0", async () => {
+    await expect(mintPassport("0")).rejects.toThrow(/spendCap must be greater than 0/);
+  });
+
+  it("rejects a spendCap above the documented 128-bit max", async () => {
+    const tooLarge = (1n << 128n).toString();
+    await expect(mintPassport(tooLarge)).rejects.toThrow(/128-bit max/);
+  });
+});
 
 describe("parseContractError", () => {
   it("maps Soroban contract error codes to generated validator names", () => {
