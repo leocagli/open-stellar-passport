@@ -31,7 +31,7 @@ What the chain enforces — tested end-to-end:
 
 - ✅ **Valid proof** → `verify_and_register` **Success**: attestation minted for agent `#42` at ledger `3,146,304`, `passport` event emitted with the nullifier + spend cap.
 - 🔁 **Replay the same proof** → `Error(Contract, #4)` = **`NullifierUsed`** (stateful anti-replay / anti-Sybil).
-- ✋ **Tamper a public input** → `Error(Contract, #0)` = **`InvalidProof`** (the BN254 pairing check rejects it — soundness).
+- ✋ **Tamper a public input** → `Error(Contract, #5)` = **`InvalidProof`** (the BN254 pairing check rejects it — soundness).
 - ❌ **Proof against unknown root** → `Error(Contract, #6)` = **`UnknownRegistryRoot`** (only approved roots allowed).
 - 🔒 Only **4 public inputs** ever reach the chain (`registryRoot`, `nullifierHash`, `agentId`, `spendCap`). The owner key, balance and Merkle path never leave the browser.
 

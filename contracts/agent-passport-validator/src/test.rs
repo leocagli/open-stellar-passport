@@ -197,9 +197,17 @@ fn mixed_batch_results() {
         public_inputs: real_public_inputs(&env),
     });
 
+    // 4. Unknown registry root
+    let mut unknown_root_pi = real_public_inputs(&env);
+    unknown_root_pi.set(0, U256::from_u32(&env, 123456));
+    inputs.push_back(VerifyInput {
+        proof: real_proof(&env),
+        public_inputs: unknown_root_pi,
+    });
+
     let results = client.verify_batch(&inputs);
 
-    assert_eq!(results.len(), 3);
+    assert_eq!(results.len(), 4);
 
     // First should succeed
     assert!(results.get(0).unwrap().success);
@@ -213,6 +221,11 @@ fn mixed_batch_results() {
     let res2 = results.get(2).unwrap();
     assert!(!res2.success);
     assert_eq!(res2.error, Some(Symbol::new(&env, "NullifierUsed")));
+
+    // Fourth should fail with UnknownRegistryRoot
+    let res3 = results.get(3).unwrap();
+    assert!(!res3.success);
+    assert_eq!(res3.error, Some(Symbol::new(&env, "UnknownRegistryRoot")));
 }
 
 #[test]
