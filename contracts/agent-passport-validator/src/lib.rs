@@ -26,11 +26,8 @@ const IDX_NULLIFIER: u32 = 1;
 const IDX_AGENT_ID: u32 = 2;
 const IDX_SPEND_CAP: u32 = 3;
 
-/// ~30 days of ledgers (5s close time)
 const TTL_BUMP: u32 = 518_400;
 const TTL_THRESHOLD: u32 = 17_280;
-
-/// Rate limit window: 10 ledgers ≈ 1 minute at 5s/ledger
 const RATE_LIMIT_WINDOW: u32 = 10;
 const DEFAULT_RATE_LIMIT: u32 = 10;
 
@@ -45,9 +42,7 @@ pub enum Error {
     InvalidProof = 5,
     UnknownRegistryRoot = 6,
     BatchTooLarge = 7,
-    /// Caller exceeded the rate limit for this window.
     RateLimitExceeded = 8,
-    /// Only admin can perform this action.
     Unauthorized = 9,
 }
 
@@ -121,17 +116,13 @@ pub struct VerifyResult {
     pub error: Option<Symbol>,
 }
 
-/// Rate limit tracking per caller.
 #[contracttype]
 #[derive(Clone, Debug, Default)]
 pub struct RateLimitState {
-    /// Ledger sequence when the current window started.
     pub window_start: u32,
-    /// Call count in the current window.
     pub count: u32,
 }
 
-/// Admin-adjustable rate limit configuration.
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct RateLimitConfig {
@@ -151,9 +142,7 @@ enum DataKey {
     RegistryRoots,
     AuditEntry(u64),
     AuditSequence,
-    /// Rate limit state per caller address.
     RateLimit(Address),
-    /// Global rate limit configuration.
     RateLimitConfig,
 }
 
@@ -175,7 +164,6 @@ impl AgentPassportValidator {
             &DataKey::RegistryRoots,
             &Vec::from_array(&env, [initial_root]),
         );
-        // Initialize default rate limit config
         storage.set(
             &DataKey::RateLimitConfig,
             &RateLimitConfig {
@@ -193,7 +181,6 @@ impl AgentPassportValidator {
         );
     }
 
-    /// Admin setter: adjust the max calls per window.
     pub fn set_rate_limit(env: Env, max_calls: u32) {
         let admin: Address = env
             .storage()
@@ -215,7 +202,6 @@ impl AgentPassportValidator {
         env.storage().instance().set(&DataKey::RateLimitConfig, &config);
     }
 
-    /// Read the current rate limit config.
     pub fn get_rate_limit(env: Env) -> RateLimitConfig {
         env.storage()
             .instance()
@@ -245,7 +231,6 @@ impl AgentPassportValidator {
             count: 0,
         });
 
-        // Reset if window has passed
         if current_ledger >= state.window_start + config.window_ledgers {
             state = RateLimitState {
                 window_start: current_ledger,
@@ -259,7 +244,6 @@ impl AgentPassportValidator {
 
         state.count += 1;
         persistent.set(&key, &state);
-        // TTL: keep alive for the window + some buffer
         persistent.extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 
         Ok(())
@@ -272,8 +256,6 @@ impl AgentPassportValidator {
         public_inputs: &Vec<U256>,
     ) -> Result<Attestation, Error> {
         extend_instance_ttl(&env);
-
-        // Rate limit check
         Self::check_rate_limit(env, caller)?;
 
         if public_inputs.len() != N_PUBLIC_INPUTS {
@@ -285,7 +267,6 @@ impl AgentPassportValidator {
         let registry_root = public_inputs.get_unchecked(0);
         let spend_cap = public_inputs.get_unchecked(IDX_SPEND_CAP);
 
-        // (0) check registry root allow-list
         if !env
             .storage()
             .instance()
@@ -294,14 +275,12 @@ impl AgentPassportValidator {
             return Err(Error::UnknownRegistryRoot);
         }
 
-        // (1) anti-replay
         let persistent = env.storage().persistent();
         let nf_key = DataKey::Nullifier(nullifier.clone());
         if persistent.has(&nf_key) {
             return Err(Error::NullifierUsed);
         }
 
-        // (2) cross-contract verify
         let verifier_addr: Address = env
             .storage()
             .instance()
@@ -318,7 +297,6 @@ impl AgentPassportValidator {
             _ => return Err(Error::InvalidProof),
         }
 
-        // (3) commit
         persistent.set(&nf_key, &true);
         persistent.extend_ttl(&nf_key, TTL_THRESHOLD, TTL_BUMP);
 
@@ -374,10 +352,21 @@ impl AgentPassportValidator {
                     });
                 }
                 Err(e) => {
+                    let sym = match e {
+                        Error::NotInitialized => Symbol::new(&env, "NotInitialized"),
+                        Error::AlreadyInitialized => Symbol::new(&env, "AlreadyInitialized"),
+                        Error::BadPublicInputs => Symbol::new(&env, "BadPublicInputs"),
+                        Error::NullifierUsed => Symbol::new(&env, "NullifierUsed"),
+                        Error::InvalidProof => Symbol::new(&env, "InvalidProof"),
+                        Error::UnknownRegistryRoot => Symbol::new(&env, "UnknownRegistryRoot"),
+                        Error::BatchTooLarge => Symbol::new(&env, "BatchTooLarge"),
+                        Error::RateLimitExceeded => Symbol::new(&env, "RateLimitExceeded"),
+                        Error::Unauthorized => Symbol::new(&env, "Unauthorized"),
+                    };
                     results.push_back(VerifyResult {
                         root,
                         success: false,
-                        error: Some(Symbol::new(&env, format!("{:?}", e).as_str())),
+                        error: Some(sym),
                     });
                 }
             }
@@ -386,7 +375,7 @@ impl AgentPassportValidator {
         Ok(results)
     }
 
-    // ... existing admin functions, getters, etc. remain unchanged ...
+    // ... existing admin functions, getters remain unchanged ...
     // (propose_admin, accept_admin, renounce_admin, set_verifier,
     //  add_registry_root, remove_registry_root, list_registry_roots,
     //  get_passport, is_registered, is_nullifier_used, audit_log, etc.)
