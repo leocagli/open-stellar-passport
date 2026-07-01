@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { PassportCard, type PassportState } from "./components/PassportCard";
+import { AgentBadgeGrid } from "./components/AgentBadgeGrid";
 import { Badge, Button, Card, Mono, cx } from "./components/primitives";
 import {
   ArrowRight,
@@ -163,6 +164,7 @@ export default function App() {
               The proof is built in your browser. Owner key &amp; balance never leave this page — only the proof and
               its four public inputs are sent on-chain.
             </p>
+            <AgentBadgeGrid agentId={minted?.agentId} />
             <div className="mt-5">
               <Console lines={log} />
             </div>

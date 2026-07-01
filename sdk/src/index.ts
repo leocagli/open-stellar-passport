@@ -25,6 +25,10 @@ export {
   type SorobanProof,
   type Artifact,
 } from "./prover.js";
+export {
+  buildVerifyCall,
+  ProofEncodingError,
+} from "./verify.js";
 
 // Re-export the typed contract client + types generated from the deployed contract.
 export {
@@ -36,4 +40,3 @@ export {
 } from "../bindings/src/index.js";
 
 export { PassportClient } from "./PassportClient.js";
-
