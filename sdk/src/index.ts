@@ -35,5 +35,4 @@ export {
   type Groth16Proof,
 } from "../bindings/src/index.js";
 
-export { PassportClient } from "./PassportClient.js";
-
+export { PassportClient, RateLimitError, parseRateLimitError, PassportError } from "./PassportClient.js";
