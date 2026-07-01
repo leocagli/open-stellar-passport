@@ -3,6 +3,21 @@ import { GET, _resetWarnedSet } from "./route";
 import { globalPassportStore } from "../../../../src/lib/passport-store";
 import { getNotifications, _reset as resetNotifications } from "../../../../src/lib/notifications/notification-store";
 
+vi.mock("next/server", () => {
+  return {
+    NextResponse: {
+      json: (body: unknown, init?: { status?: number; headers?: Record<string, string> }) => {
+        const headers = new Headers(init?.headers);
+        return {
+          status: init?.status ?? 200,
+          headers,
+          json: async () => body,
+        } as unknown as Response;
+      },
+    },
+  };
+});
+
 describe("GET /api/cron/passport-expiry-check", () => {
   beforeEach(() => {
     globalPassportStore.reset();

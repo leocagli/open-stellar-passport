@@ -18,8 +18,6 @@ import {
   X,
 } from "./components/icons";
 import { Mark, MarkChip, Wordmark } from "./components/Brand";
-import { toast } from "sonner";
-import { Toaster } from "@/components/ui/sonner";
 import {
   Dialog,
   DialogContent,
@@ -38,6 +36,9 @@ import {
   type MintedProof,
   type OnChainResult,
 } from "./lib/passport";
+import { useNotifications } from "./components/NotificationProvider";
+import { awardXP, getXPState } from "./lib/gamification/xp";
+import { completeQuest } from "./lib/quests/quests";
 
 const EXPLORER = (id: string) => `https://stellar.expert/explorer/testnet/contract/${id}`;
 const REPO = "https://github.com/leocagli/open-stellar-passport";
@@ -54,6 +55,7 @@ interface PayResult {
 }
 
 export default function App() {
+  const notifications = useNotifications();
   const [minted, setMinted] = useState<MintedProof | null>(null);
   const [proving, setProving] = useState(false);
   const [verifying, setVerifying] = useState(false);
@@ -64,6 +66,8 @@ export default function App() {
   const [replay, setReplay] = useState<OnChainResult | null>(null);
   const [replaying, setReplaying] = useState(false);
   const [log, setLog] = useState<string[]>([]);
+  const [demoXP, setDemoXP] = useState(() => getXPState("demo-agent").xp);
+  const [demoLevel, setDemoLevel] = useState(() => getXPState("demo-agent").level);
 
   const addLog = (line: string) => setLog((l) => [...l, `${new Date().toLocaleTimeString()}  ${line}`]);
 
@@ -80,10 +84,16 @@ export default function App() {
       setMinted(m);
       addLog(`+ proof generated in ${m.provingMs} ms · off-chain verify: ${m.offChainValid}`);
       addLog(`  agent #${m.agentId} · nullifier ${m.nullifierHash.slice(0, 20)}…`);
-      toast.success("Proof generated", { description: `Agent #${m.agentId} · ${m.provingMs} ms, fully client-side` });
+      notifications.push({
+        title: "Proof generated",
+        message: `Agent #${m.agentId} · ${m.provingMs} ms, fully client-side`,
+      });
     } catch (e) {
       addLog(`! proving failed: ${String((e as Error).message)}`);
-      toast.error("Proving failed", { description: String((e as Error).message) });
+      notifications.push({
+        title: "Proving failed",
+        message: String((e as Error).message),
+      });
     } finally {
       setProving(false);
     }
@@ -96,8 +106,11 @@ export default function App() {
     const r = await verifyOnChain(minted);
     setVerifyRes(r);
     addLog(r.ok ? `+ ON-CHAIN VERIFIED · attestation minted (ledger ${r.attestation?.ledger})` : `! rejected: ${r.error}`);
-    if (r.ok) toast.success("Verified on-chain", { description: `BN254 pairing passed · ledger ${r.attestation?.ledger}` });
-    else toast.error("Verification rejected", { description: r.error });
+    notifications.push(
+      r.ok
+        ? { title: "Verified on-chain", message: `BN254 pairing passed · ledger ${r.attestation?.ledger}` }
+        : { title: "Verification rejected", message: r.error },
+    );
     setVerifying(false);
   }
 
@@ -108,8 +121,10 @@ export default function App() {
     const r = await authorizePayment(minted.agentId, toStroops(amount));
     setPayRes({ authorized: r.authorized, reason: r.reason, amount });
     addLog(r.authorized ? `+ APPROVED — ${r.reason}` : `x DENIED — ${r.reason}`);
-    if (r.authorized) toast.success(`Payment authorized · ${amount} XLM`, { description: r.reason });
-    else toast.error(`Payment denied · ${amount} XLM`, { description: r.reason });
+    notifications.push({
+      title: r.authorized ? `Payment authorized · ${amount} XLM` : `Payment denied · ${amount} XLM`,
+      message: r.reason,
+    });
     setPaying(false);
   }
 
@@ -119,8 +134,33 @@ export default function App() {
     const r = await replaySpentProof();
     setReplay(r);
     addLog(r.ok ? `! unexpectedly accepted` : `+ chain rejected replay — ${r.error}`);
-    if (!r.ok) toast.success("Replay blocked on-chain", { description: r.error });
+    if (!r.ok) {
+      notifications.push({
+        title: "Replay blocked on-chain",
+        message: r.error,
+      });
+    }
     setReplaying(false);
+  }
+
+  function doAwardDemoXP(amount: number) {
+    const next = awardXP("demo-agent", amount);
+    setDemoXP(next.xp);
+    setDemoLevel(next.level);
+    addLog(`+ demo agent earned ${amount} XP · level ${next.level}`);
+  }
+
+  function doCompleteDemoQuest() {
+    const completion = completeQuest({
+      agentId: "demo-agent",
+      questId: `quest-${Date.now()}`,
+      questName: "Stellar Relay Sprint",
+      xpReward: 75,
+    });
+    const next = getXPState(completion.agentId);
+    setDemoXP(next.xp);
+    setDemoLevel(next.level);
+    addLog(`+ quest completed: ${completion.questName} (+${completion.xpReward} XP)`);
   }
 
   return (
@@ -147,6 +187,12 @@ export default function App() {
               <StepVerify minted={minted} verifying={verifying} verifyRes={verifyRes} onVerify={doVerify} />
               <StepPay cap={cap} verifyRes={verifyRes} paying={paying} payRes={payRes} onPay={doPay} />
               <StepReplay replaying={replaying} replay={replay} onReplay={doReplay} />
+              <GamificationDemo
+                xp={demoXP}
+                level={demoLevel}
+                onAwardXP={doAwardDemoXP}
+                onCompleteQuest={doCompleteDemoQuest}
+              />
             </div>
           </div>
 
@@ -177,7 +223,6 @@ export default function App() {
         <Comparison />
       </main>
         <Footer />
-        <Toaster position="bottom-right" />
       </div>
     </TooltipProvider>
   );
@@ -622,6 +667,44 @@ function StepReplay({ replaying, replay, onReplay }: { replaying: boolean; repla
         </AnimatePresence>
       </div>
     </StepShell>
+  );
+}
+
+function GamificationDemo({
+  xp,
+  level,
+  onAwardXP,
+  onCompleteQuest,
+}: {
+  xp: number;
+  level: number;
+  onAwardXP: (amount: number) => void;
+  onCompleteQuest: () => void;
+}) {
+  return (
+    <Card className="border-violet/15 bg-[linear-gradient(180deg,rgba(245,242,255,0.72),rgba(255,255,255,1))]">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-violet-soft">Gamification</p>
+          <h3 className="mt-2 text-lg font-semibold text-fg">Toast event preview</h3>
+          <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted">
+            Level-up and quest-complete notifications now stack in the top-right corner with a max of three visible at
+            once.
+          </p>
+        </div>
+        <div className="rounded border border-violet/20 bg-white/80 px-3 py-2 text-right">
+          <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-faint">Demo agent</div>
+          <div className="mt-1 text-sm font-semibold text-fg">Level {level}</div>
+          <div className="text-sm text-muted">{xp} XP</div>
+        </div>
+      </div>
+
+      <div className="mt-5 flex flex-wrap gap-3">
+        <Button variant="outline" onClick={() => onAwardXP(45)}>Award 45 XP</Button>
+        <Button variant="outline" onClick={() => onAwardXP(110)}>Cross a level</Button>
+        <Button onClick={onCompleteQuest}>Complete quest</Button>
+      </div>
+    </Card>
   );
 }
 
