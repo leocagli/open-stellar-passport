@@ -1,4 +1,3 @@
-// sdk/src/PassportClient.ts
 import {
   Client,
   type VerifyInput,
@@ -40,7 +39,7 @@ export class RateLimitError extends Error {
 export type VerifyCredentialInput = {
   /** registry root, 32 bytes */
   root: Buffer;
-  /** Groth16 proof bytes */
+  /** Groth16 proof bytes (implementation-specific packing) */
   proof: Buffer;
   /** circuit public inputs (as field elements) */
   publicInputs: bigint[];
@@ -84,7 +83,6 @@ const mapSymbolToPassportError = (err: unknown): PassportError | undefined => {
  */
 export function parseRateLimitError(err: unknown): RateLimitError | null {
   if (err instanceof Error && err.message.includes("RateLimitExceeded")) {
-    // Extract retry estimate from error if available, default to window size
     return new RateLimitError(10);
   }
   if (typeof err === "string" && err.includes("RateLimitExceeded")) {
@@ -93,9 +91,19 @@ export function parseRateLimitError(err: unknown): RateLimitError | null {
   return null;
 }
 
+/**
+ * Typed client for the Agent Passport validator contract.
+ *
+ * This SDK currently implements the required functionality using the
+ * generated typed contract bindings under `sdk/bindings`.
+ */
 export class PassportClient {
   private readonly typed: Client;
 
+  /**
+   * @param rpc - Soroban RPC server instance (not directly used; kept for API parity)
+   * @param contractId - validator contract ID
+   */
   constructor(rpc: unknown, contractId: string) {
     this.typed = new Client({
       contractId,
@@ -104,6 +112,15 @@ export class PassportClient {
     });
   }
 
+  /**
+   * Verify a single credential proof.
+   *
+   * Note: the contract interface exposes `verify_batch`; this method submits
+   * a single-element batch and returns the first result.
+   *
+   * @param input - proof + public inputs.
+   * @returns typed result indicating success and optional error.
+   */
   async verifyCredential(
     input: VerifyCredentialInput,
   ): Promise<{ success: boolean; error?: string }> {
@@ -135,6 +152,12 @@ export class PassportClient {
     }
   }
 
+  /**
+   * Verify multiple proofs.
+   *
+   * Automatically splits into chunks of 8 to respect the contract's batch
+   * limit.
+   */
   async verifyBatch(inputs: VerifyBatchInput[]): Promise<VerifyBatchResult[]> {
     const BATCH_LIMIT = 8;
     const out: VerifyBatchResult[] = [];
@@ -160,5 +183,27 @@ export class PassportClient {
     }
 
     return out;
+  }
+
+  /**
+   * Check whether a registry root has been revoked.
+   *
+   * The contract does not expose a dedicated `is_revoked` read method; this
+   * scans the audit log entries for a matching `revoke` action.
+   */
+  async isRevoked(root: Buffer): Promise<boolean> {
+    const count = await this.typed.audit_count();
+    const total = count.result ?? count;
+
+    for (let i = 0n; i < total; i++) {
+      const tx = await this.typed.get_audit_entry({ seq: i });
+      const rec = tx.result ?? undefined;
+      if (!rec) continue;
+      if (rec.action === "revoke" && Buffer.isBuffer(rec.root) && rec.root.equals(root)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 }
